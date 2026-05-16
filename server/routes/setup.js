@@ -8,6 +8,8 @@ router.get('/', async (req, res) => {
   }
 
   try {
+    await pool.query(`DELETE FROM suivis`);
+    await pool.query(`DELETE FROM work_orders`);
     await pool.query(`DELETE FROM users`);
 
     await pool.query(`
@@ -16,5 +18,14 @@ router.get('/', async (req, res) => {
         ('Boulet',    'Francois', 'francois.boulet@hyundaistraymond.ca', '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'conseiller', 'FB'),
         ('Perusse',   'Sonia',    'sonia.perusse@hyundaistraymond.ca',   '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'directeur',  'SP'),
         ('Dube',      'Johanne',  'jdube@hyundaistraymond.ca',           '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'preposee',   'JD'),
-        ('Plamondon', 'Etienne',  'eplamondon@hyundaistraymond.ca',       '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'admin',      'EP')
-      ON
+        ('Plamondon', 'Etienne',  'eplamondon@hyundaistraymond.ca',      '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'admin',      'EP')
+    `);
+
+    res.json({ success: true, message: 'Utilisateurs mis à jour!' });
+  } catch (err) {
+    console.error('Erreur setup:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
