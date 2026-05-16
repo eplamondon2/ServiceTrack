@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     // Insérer les vrais utilisateurs
     await pool.query(`
       INSERT INTO users (nom, prenom, email, password, role, initiales) VALUES
-      ('Perusse', 'Sonia', 'sonia.perusse@hyundaistraymond.ca', '$2a$12$HZ7UcnjMrgEPSKRcr7hc9ORB1pbPE2Ck.2c8ZdeAeMp6rD8DL5WJS', 'directeur', 'SP'),
+      ('Perusse', 'Sonia', 'sperusse@hyundaistraymond.ca', '$2a$12$HZ7UcnjMrgEPSKRcr7hc9ORB1pbPE2Ck.2c8ZdeAeMp6rD8DL5WJS', 'directeur', 'SP'),
         ('Langevin',  'Nancy',    'nancy.langevin@hyundaistraymond.ca',  '$2a$12$rPvaJpwww.0V625oMrQiweuUs.cIfJ9zdjtqf8WBAmNuIBf5Yd3bS', 'conseiller',  'NL'),
         ('Boulet',    'Francois', 'francois.boulet@hyundaistraymond.ca', '$2a$12$dfNtEJmwMLNycvi69G6geOn4xSmBtkRKGHlv3emuT1oRKWDRiqnx.', 'conseiller', 'FB'),
        ('Plamondon', 'Etienne',  'eplamondon@hyundaistraymond.ca', '$2a$12$yVr6R6QZaBtFk1TwnZf2MuPvkYYwXnHE64fTJTjnOFM7fRj7fZUMa', 'admin', 'EP'),
