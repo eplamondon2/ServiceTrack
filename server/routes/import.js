@@ -97,28 +97,37 @@ const bons = JSON.parse(jsonStr);
   }
 });
 
-const PROMPT_EXTRACTION = `Tu es un assistant spécialisé dans l'extraction de données de bons de travail automobile depuis des rapports Serti Keyloop.
+const PROMPT_EXTRACTION = `Tu es un assistant spécialisé dans l'extraction de données de bons de travail automobile depuis des rapports Serti Keyloop de Hyundai St-Raymond.
 
-Analyse ce document et extrais TOUS les bons de travail/rendez-vous trouvés.
+Analyse ce document et extrais TOUS les rendez-vous trouvés.
+
+MAPPING DES AVISEURS (très important):
+- NL = nancy.langevin@hyundaistraymond.ca
+- FB1 ou FB = francois.boulet@hyundaistraymond.ca  
+- SP1 ou SP = sonia.perusse@hyundaistraymond.ca
+- JD = jdube@hyundaistraymond.ca
+
 Réponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ou après, sans balises markdown.
 
-Format exact pour chaque bon:
+Format exact pour chaque rendez-vous:
 [
   {
-    "numero": "WO-XXXXX ou numéro du bon tel qu'affiché",
-    "client_nom": "Nom complet du client",
-    "client_tel": "Numéro de téléphone ou null",
-    "annee": 2021,
-    "marque": "Toyota",
-    "modele": "RAV4",
-    "vehicule": "2021 Toyota RAV4",
-    "kilometrage": 48221,
-    "description": "Description des travaux",
-    "montant": "189,95$",
-    "date_promesse": "2026-05-15 17:00"
+    "numero": "RDV-001",
+    "client_nom": "JEAN SIMARD",
+    "client_tel": "581 419-1063",
+    "annee": 2022,
+    "marque": "HYUNDAI",
+    "modele": "SANTA FE",
+    "vehicule": "2022 HYUNDAI SANTA FE",
+    "kilometrage": 66000,
+    "vin": "KM8S7DA25NU017299",
+    "description": "Service d'entretien #1",
+    "montant": "132.17$",
+    "date_promesse": "2026-05-19 07:30",
+    "advisor_email": "nancy.langevin@hyundaistraymond.ca"
   }
 ]
 
-Si un champ est absent ou illisible, utilise null. Extrais tous les bons sans exception.`;
-
+Numérote les rendez-vous séquentiellement: RDV-001, RDV-002, etc.
+Si un champ est absent, utilise null. Extrais TOUS les rendez-vous sans exception.`;
 module.exports = router;
