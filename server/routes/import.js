@@ -41,14 +41,18 @@ router.post('/pdf', auth, requireRole('admin','directeur','preposee'), upload.si
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
-      max_tokens: 4000,
+      max_tokens: 8000,
       messages: [{ role: 'user', content }]
     });
 
     const raw = response.content[0].text;
-    // Nettoyer le JSON (enlever les balises markdown si présentes)
-    const jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const bons = JSON.parse(jsonStr);
+let jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+// S'assurer que le JSON est complet
+if (!jsonStr.endsWith(']')) {
+  const lastBracket = jsonStr.lastIndexOf('},');
+  if (lastBracket > 0) jsonStr = jsonStr.substring(0, lastBracket + 1) + ']';
+}
+const bons = JSON.parse(jsonStr);
 
     if (!Array.isArray(bons)) throw new Error('Format de réponse inattendu');
 
