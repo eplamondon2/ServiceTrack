@@ -18,6 +18,7 @@ app.use('/api/import',     require('./routes/import'));
 app.use('/api/users',      require('./routes/users'));
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
+app.use('/api/setup', require('./routes/setup'));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 // ─── FRONTEND (production) ────────────────────────────────────────────────────
