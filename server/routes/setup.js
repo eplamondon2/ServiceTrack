@@ -9,8 +9,9 @@ router.get('/', async (req, res) => {
 
   try {
     await pool.query(`DELETE FROM suivis`);
-    await pool.query(`DELETE FROM work_orders`);
-    await pool.query(`DELETE FROM users`);
+await pool.query(`DELETE FROM imports`);
+await pool.query(`DELETE FROM work_orders`);
+await pool.query(`DELETE FROM users`);
 
     await pool.query(`
       INSERT INTO users (nom, prenom, email, password, role, initiales) VALUES
