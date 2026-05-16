@@ -13,10 +13,10 @@ const STATUS_COLORS = { open:'var(--red)', suivi:'var(--amber)', attente:'var(--
 export { STATUS_LABELS, STATUS_COLORS };
 
 export default function Dashboard() {
-  const { user, logout }     = useAuth();
-  const navigate             = useNavigate();
-  const location             = useLocation();
-  const [workOrders, setWO]  = useState([]);
+  const { user, logout }        = useAuth();
+  const navigate                = useNavigate();
+  const location                = useLocation();
+  const [workOrders, setWO]     = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [filters, setFilters]   = useState({ status:'', search:'', advisor_id:'' });
@@ -56,7 +56,6 @@ export default function Dashboard() {
   }
 
   const counts = {
-    all:     workOrders.length,
     open:    workOrders.filter(w => w.status === 'open').length,
     suivi:   workOrders.filter(w => w.status === 'suivi').length,
     attente: workOrders.filter(w => w.status === 'attente').length,
@@ -73,23 +72,32 @@ export default function Dashboard() {
   });
 
   const sideItem = (statusKey, label, icon, color) => {
-    const active = filters.status === statusKey;
+    const isAll = statusKey === 'all';
+    const active = isAll ? filters.status === '' : filters.status === statusKey;
+    const count = isAll ? workOrders.length : counts[statusKey];
+
     return (
-      <button key={statusKey} onClick={() => setFilters(f => ({ ...f, status: active ? '' : statusKey }))}
-        style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+      <button
+        key={statusKey}
+        onClick={() => setFilters(f => ({ ...f, status: isAll ? '' : (active ? '' : statusKey) }))}
+        style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
           padding:'6px 8px', borderRadius:'var(--radius)', border:'none',
           background: active ? 'var(--bg)' : 'transparent',
           color: active ? 'var(--text)' : 'var(--text2)',
-          fontWeight: active ? 500 : 400, cursor:'pointer', fontSize:'13px' }}>
+          fontWeight: active ? 500 : 400, cursor:'pointer', fontSize:'13px'
+        }}>
         <span style={{ display:'flex', alignItems:'center', gap:'7px' }}>
           <i className={`ti ti-${icon}`} style={{ color: active ? color : 'inherit' }} />
           {label}
         </span>
-        {counts[statusKey] > 0 && (
-          <span style={{ fontSize:'11px', padding:'1px 6px', borderRadius:'10px',
-            background: statusKey === 'all' ? 'var(--bg3)' : statusKey === 'open' ? 'var(--red-lt)' : statusKey === 'suivi' ? 'var(--amber-lt)' : statusKey === 'attente' ? 'var(--blue-lt)' : 'var(--green-lt)',
-            color: statusKey === 'all' ? 'var(--text2)' : statusKey === 'open' ? 'var(--red)' : statusKey === 'suivi' ? 'var(--amber)' : statusKey === 'attente' ? 'var(--blue)' : 'var(--green)' }}>
-            {counts[statusKey]}
+        {count > 0 && (
+          <span style={{
+            fontSize:'11px', padding:'1px 6px', borderRadius:'10px',
+            background: isAll ? 'var(--bg3)' : statusKey === 'open' ? 'var(--red-lt)' : statusKey === 'suivi' ? 'var(--amber-lt)' : statusKey === 'attente' ? 'var(--blue-lt)' : 'var(--green-lt)',
+            color: isAll ? 'var(--text2)' : statusKey === 'open' ? 'var(--red)' : statusKey === 'suivi' ? 'var(--amber)' : statusKey === 'attente' ? 'var(--blue)' : 'var(--green)'
+          }}>
+            {count}
           </span>
         )}
       </button>
@@ -126,11 +134,11 @@ export default function Dashboard() {
         {/* Sidebar */}
         <div style={{ width:'196px', borderRight:`0.5px solid var(--border)`, padding:'10px 8px', background:'var(--bg2)', flexShrink:0, overflowY:'auto' }}>
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', padding:'0 8px', marginBottom:'4px' }}>Statut</div>
-          {sideItem('all',     'Tous',          'list',         'var(--text2)')}
-          {sideItem('open',    'Ouverts',        'alert-circle', 'var(--red)')}
-          {sideItem('suivi',   'Suivi requis',   'clock',        'var(--amber)')}
-          {sideItem('attente', 'En attente',     'hourglass',    'var(--blue)')}
-          {sideItem('livre',   'Livrés',         'check',        'var(--green)')}
+          {sideItem('all',     'Tous',         'list',         'var(--text2)')}
+          {sideItem('open',    'Ouverts',       'alert-circle', 'var(--red)')}
+          {sideItem('suivi',   'Suivi requis',  'clock',        'var(--amber)')}
+          {sideItem('attente', 'En attente',    'hourglass',    'var(--blue)')}
+          {sideItem('livre',   'Livrés',        'check',        'var(--green)')}
 
           {(user?.role === 'admin' || user?.role === 'directeur') && (
             <>
