@@ -20,7 +20,7 @@ router.get('/', auth, async (req, res) => {
 
  // Seuls les conseillers sont restreints à leurs bons
 // directeur, admin, preposee voient tout
-if (req.user.role === 'conseiller' && !advisor_id) {
+if (req.user.role === 'conseiller') {
   where.push(`wo.advisor_id = $${i++}`);
   params.push(req.user.id);
 }
