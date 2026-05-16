@@ -18,11 +18,12 @@ router.get('/', auth, async (req, res) => {
     params.push(`%${search}%`); i++;
   }
 
-  // Conseillers ne voient que leurs propres bons (sauf directeur et admin)
-  if (req.user.role === 'conseiller') {
-    where.push(`wo.advisor_id = $${i++}`);
-    params.push(req.user.id);
-  }
+ // Seuls les conseillers sont restreints à leurs bons
+// directeur, admin, preposee voient tout
+if (req.user.role === 'conseiller' && !advisor_id) {
+  where.push(`wo.advisor_id = $${i++}`);
+  params.push(req.user.id);
+}
 
   try {
     const sql = `
