@@ -77,49 +77,73 @@ Format exact:
 
 Si un champ est absent, utilise null. Extrais TOUS les bons OUVERT et REOUVERT sans exception.`;
 
+function nettoierJson(raw) {
+  var jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  if (!jsonStr.endsWith(']')) {
+    var last = jsonStr.lastIndexOf('},');
+    if (last > 0) {
+      jsonStr = jsonStr.substring(0, last + 1) + ']';
+    }
+  }
+  return jsonStr;
+}
+
+async function chercherNomClient(vin) {
+  if (!vin) return null;
+  var result = await pool.query(
+    'SELECT client_nom FROM work_orders WHERE vin = $1 AND client_nom NOT ILIKE $2 AND client_nom NOT ILIKE $3 ORDER BY created_at DESC LIMIT 1',
+    [vin, '%GARANTIE%', '%GARANT%']
+  );
+  if (result.rows.length > 0) return result.rows[0].client_nom;
+  return null;
+}
+
+function estGarantie(nom) {
+  if (!nom) return false;
+  var upper = nom.toUpperCase();
+  return upper.includes('GARANTIE') || upper.includes('GARANT');
+}
+
 router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller'), upload.single('fichier'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
   try {
-    const contenu = req.file.buffer.toString('utf-8');
-    const content = [{ type: 'text', text: PROMPT_RDV + '\n\nContenu du fichier:\n' + contenu }];
+    var contenu = req.file.buffer.toString('utf-8');
+    var content = [{ type: 'text', text: PROMPT_RDV + '\n\nContenu du fichier:\n' + contenu }];
 
-    const response = await anthropic.messages.create({
+    var response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 8000,
-      messages: [{ role: 'user', content }]
+      messages: [{ role: 'user', content: content }]
     });
 
-    const raw = response.content[0].text;
-    let jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    if (!jsonStr.endsWith(']')) {
-      const last = jsonStr.lastIndexOf('},');
-      if (last > 0) jsonStr = jsonStr.substring(0, last + 1) + ']';
-    }
-
-    const bons = JSON.parse(jsonStr);
+    var raw = response.content[0].text;
+    var jsonStr = nettoierJson(raw);
+    var bons = JSON.parse(jsonStr);
     if (!Array.isArray(bons)) throw new Error('Format inattendu');
 
-    const { rows: users } = await pool.query('SELECT id, email FROM users');
-    const byEmail = {};
-    users.forEach(function(u) { byEmail[u.email] = u.id; });
+    var usersResult = await pool.query('SELECT id, email FROM users');
+    var byEmail = {};
+    usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
-    await pool.query('DELETE FROM suivis WHERE work_order_id IN (SELECT id FROM work_orders WHERE type_bon = $1)', ['rdv']);
-    await pool.query('DELETE FROM imports WHERE user_id IN (SELECT id FROM users) AND source = $1 AND fichier_nom NOT LIKE $2', ['pdf', '%WP%']);
-    await pool.query('DELETE FROM work_orders WHERE type_bon = $1', ['rdv']);
+    // Archiver les anciens RDV au lieu de les supprimer
+    // On les passe en statut archive pour conserver les NIV
+    await pool.query('UPDATE work_orders SET status = $1 WHERE type_bon = $2 AND status != $3', ['annule', 'rdv', 'annule']);
 
-    let importes = 0, erreurs = 0, details = [];
+    var importes = 0;
+    var erreurs = 0;
+    var details = [];
 
-    for (let idx = 0; idx < bons.length; idx++) {
-      const bon = bons[idx];
+    for (var idx = 0; idx < bons.length; idx++) {
+      var bon = bons[idx];
       try {
-        const advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
-        const vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
-        const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
-        const num = bon.numero || ('RDV-' + date + '-' + String(idx+1).padStart(3,'0'));
+        var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
+        var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
+        var dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
+        var num = bon.numero || ('RDV-' + dateStr + '-' + String(idx+1).padStart(3,'0'));
 
         await pool.query(
-          'INSERT INTO work_orders (numero, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_promesse, advisor_id, source, type_bon, courtoisie, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (numero) DO NOTHING',
+          'INSERT INTO work_orders (numero, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_promesse, advisor_id, source, type_bon, courtoisie, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (numero) DO UPDATE SET status = $16, updated_at = NOW()',
           [num, bon.client_nom, bon.client_tel || null, vehicule, bon.annee || null, bon.marque || null, bon.modele || null, bon.vin || null, bon.description || null, bon.montant || 'A estimer', bon.date_promesse || null, advisorId, 'pdf', 'rdv', bon.courtoisie || false, 'open']
         );
         importes++;
@@ -146,64 +170,76 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
   try {
-    const contenu = req.file.buffer.toString('utf-8');
-    const MAX_CHARS = 80000;
-    const chunks = [];
-    for (let i = 0; i < contenu.length; i += MAX_CHARS) {
-      chunks.push(contenu.slice(i, i + MAX_CHARS));
+    var contenu = req.file.buffer.toString('utf-8');
+    var MAX_CHARS = 80000;
+    var chunks = [];
+    for (var ci = 0; ci < contenu.length; ci += MAX_CHARS) {
+      chunks.push(contenu.slice(ci, ci + MAX_CHARS));
     }
 
-    let tousLesBons = [];
+    var tousLesBons = [];
 
-    for (let c = 0; c < chunks.length; c++) {
-      const content = [{ type: 'text', text: PROMPT_WP + '\n\nContenu du fichier:\n' + chunks[c] }];
-      const response = await anthropic.messages.create({
+    for (var ci2 = 0; ci2 < chunks.length; ci2++) {
+      var content = [{ type: 'text', text: PROMPT_WP + '\n\nContenu du fichier:\n' + chunks[ci2] }];
+      var response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5',
         max_tokens: 8000,
-        messages: [{ role: 'user', content }]
+        messages: [{ role: 'user', content: content }]
       });
 
-      const raw = response.content[0].text;
-      let jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      if (!jsonStr.endsWith(']')) {
-        const last = jsonStr.lastIndexOf('},');
-        if (last > 0) jsonStr = jsonStr.substring(0, last + 1) + ']';
-      }
+      var raw = response.content[0].text;
+      var jsonStr = nettoierJson(raw);
 
       try {
-        const bons = JSON.parse(jsonStr);
-        if (Array.isArray(bons)) tousLesBons = tousLesBons.concat(bons);
-      } catch (e) {}
+        var bons = JSON.parse(jsonStr);
+        if (Array.isArray(bons)) {
+          tousLesBons = tousLesBons.concat(bons);
+        }
+      } catch (e) {
+        console.error('Erreur parsing chunk:', e.message);
+      }
     }
 
-    const { rows: users } = await pool.query('SELECT id, email FROM users');
-    const byEmail = {};
-    users.forEach(function(u) { byEmail[u.email] = u.id; });
+    var usersResult = await pool.query('SELECT id, email FROM users');
+    var byEmail = {};
+    usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
-    let importes = 0, fermes = 0, erreurs = 0, details = [];
-    const wpNumerosActifs = [];
+    var importes = 0;
+    var fermes = 0;
+    var erreurs = 0;
+    var details = [];
+    var wpNumerosActifs = [];
 
-    for (let idx = 0; idx < tousLesBons.length; idx++) {
-      const bon = tousLesBons[idx];
+    for (var idx = 0; idx < tousLesBons.length; idx++) {
+      var bon = tousLesBons[idx];
       if (!bon.numero_wp) continue;
 
       try {
-        const advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
-        const vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
-        const numero = 'WP-' + bon.numero_wp;
+        var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
+        var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
+        var numero = 'WP-' + bon.numero_wp;
         wpNumerosActifs.push(numero);
 
-        const existing = await pool.query('SELECT id FROM work_orders WHERE numero = $1', [numero]);
+        // Résoudre le nom du client pour les garanties
+        var clientNom = bon.client_nom;
+        if (estGarantie(clientNom) && bon.vin) {
+          var nomTrouve = await chercherNomClient(bon.vin);
+          if (nomTrouve) {
+            clientNom = nomTrouve + ' (garantie)';
+          }
+        }
+
+        var existing = await pool.query('SELECT id FROM work_orders WHERE numero = $1', [numero]);
 
         if (existing.rows.length > 0) {
           await pool.query(
             'UPDATE work_orders SET client_nom=$1, vehicule=$2, description=$3, montant=$4, advisor_id=$5, updated_at=NOW() WHERE numero=$6',
-            [bon.client_nom, vehicule, bon.description || null, bon.montant || 'A estimer', advisorId, numero]
+            [clientNom, vehicule, bon.description || null, bon.montant || 'A estimer', advisorId, numero]
           );
         } else {
           await pool.query(
             'INSERT INTO work_orders (numero, numero_wp, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_entree, advisor_id, source, type_bon, courtoisie, status, statut_detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)',
-            [numero, bon.numero_wp, bon.client_nom, bon.client_tel || null, vehicule, bon.annee || null, bon.marque || null, bon.modele || null, bon.vin || null, bon.description || null, bon.montant || 'A estimer', bon.date_entree || new Date().toISOString().slice(0,10), advisorId, 'pdf', 'wp', bon.courtoisie || false, 'open', 'vehicule_sur_place']
+            [numero, bon.numero_wp, clientNom, bon.client_tel || null, vehicule, bon.annee || null, bon.marque || null, bon.modele || null, bon.vin || null, bon.description || null, bon.montant || 'A estimer', bon.date_entree || new Date().toISOString().slice(0,10), advisorId, 'pdf', 'wp', bon.courtoisie || false, 'open', 'vehicule_sur_place']
           );
           importes++;
         }
@@ -214,13 +250,15 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
       }
     }
 
+    // Fermer automatiquement les WP qui ne sont plus dans le rapport
     if (wpNumerosActifs.length > 0) {
-      const placeholders = wpNumerosActifs.map(function(_, i) { return '$' + (i+1); }).join(',');
-      const result = await pool.query(
-        'UPDATE work_orders SET status = $' + (wpNumerosActifs.length+1) + ' WHERE type_bon = $' + (wpNumerosActifs.length+2) + ' AND status != $' + (wpNumerosActifs.length+3) + ' AND numero NOT IN (' + placeholders + ') RETURNING numero',
-        wpNumerosActifs.concat(['livre', 'wp', 'livre'])
+      var placeholders = wpNumerosActifs.map(function(_, i) { return '$' + (i + 1); }).join(',');
+      var fermeParams = wpNumerosActifs.concat(['livre', 'wp', 'livre']);
+      var fermeResult = await pool.query(
+        'UPDATE work_orders SET status = $' + (wpNumerosActifs.length + 1) + ' WHERE type_bon = $' + (wpNumerosActifs.length + 2) + ' AND status != $' + (wpNumerosActifs.length + 3) + ' AND numero NOT IN (' + placeholders + ') RETURNING numero',
+        fermeParams
       );
-      fermes = result.rowCount;
+      fermes = fermeResult.rowCount;
     }
 
     await pool.query(
