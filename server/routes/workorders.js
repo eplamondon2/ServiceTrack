@@ -40,6 +40,10 @@ router.get('/', auth, async (req, res) => {
       WHERE ${where.join(' AND ')}
       GROUP BY wo.id, u.id
       ORDER BY
+        CASE
+          WHEN wo.type_bon = 'rdv' THEN wo.date_promesse
+          ELSE NULL
+        END ASC NULLS LAST,
         CASE wo.status WHEN 'suivi' THEN 0 WHEN 'open' THEN 1 WHEN 'attente' THEN 2 ELSE 3 END,
         wo.date_entree DESC
       LIMIT $${i++} OFFSET $${i++}
