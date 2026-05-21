@@ -20,14 +20,13 @@ MAPPING DES AVISEURS:
 Le numero_adresse est le code court apres le nom du client sur la meme ligne, exemple:
   07:30 PIERRE MORISSETTE  PIER04  418 329-2241  --> numero_adresse = PIER04
   07:30 GERARD DESCHENES   059A    418 875-2832  --> numero_adresse = 059A
-  07:30 PATRICK MASSON     5635    418 111-2222  --> numero_adresse = 5635
 Si le client n a pas de numero_adresse, utilise null.
 
 Le numero_br est le Numero B.R. dans la section Aviseur, exemple:
   Numero B.R. .........: WP44189  --> numero_br = WP44189
 Si absent, utilise null.
 
-Pour la courtoisie, cherche la colonne V dans le tableau (4eme colonne apres NIV): O = Oui, N = Non.
+Pour la courtoisie, cherche la colonne V dans le tableau: O = Oui, N = Non.
 
 Reponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ou apres, sans balises markdown.
 
@@ -54,41 +53,6 @@ Format exact:
 ]
 
 Si un champ est absent, utilise null. Extrais TOUS les rendez-vous sans exception.`;
-
-const PROMPT_WP = `Tu es un assistant specialise dans l extraction de bons de travail depuis des rapports Serti Keyloop de Hyundai St-Raymond.
-
-Ce rapport contient des bons de travail WP avec statuts OUVERT, FERME, REOUVERT.
-Extrais SEULEMENT les bons avec statut OUVERT ou REOUVERT. Ignore les FERME.
-
-MAPPING DES AVISEURS:
-- NL = nancy.langevin@hyundaistraymond.ca
-- FB1 ou FB = francois.boulet@hyundaistraymond.ca
-- SP1 ou SP = sonia.perusse@hyundaistraymond.ca
-- JD = jdube@hyundaistraymond.ca
-
-Reponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ou apres, sans balises markdown.
-
-Format exact:
-[
-  {
-    "numero_wp": "WP43003",
-    "client_nom": "FREDERIC BOUCHER",
-    "client_tel": "418 208-3197",
-    "annee": 2024,
-    "marque": "HYUNDAI",
-    "modele": "IONIQ 5",
-    "vehicule": "2024 HYUNDAI IONIQ 5",
-    "vin": "KM8KRDDF7RU321832",
-    "description": "Resume des travaux",
-    "montant": "2669.39$",
-    "date_entree": "2026-03-18",
-    "advisor_email": "nancy.langevin@hyundaistraymond.ca",
-    "statut_serti": "OUVERT",
-    "courtoisie": false
-  }
-]
-
-Si un champ est absent, utilise null. Extrais TOUS les bons OUVERT et REOUVERT sans exception.`;
 
 function nettoierJson(raw) {
   var jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
@@ -134,6 +98,137 @@ function genNumeroRdv(bon, idx, dateStr) {
   return 'RDV-' + dateStr + '-' + String(idx + 1).padStart(3, '0');
 }
 
+// ─── PARSER WP SANS AI ────────────────────────────────────────────────────────
+function parseWP(contenu) {
+  var bons = [];
+  var lignes = contenu.split('\n');
+
+  var AVISEURS = {
+    'NL':  'nancy.langevin@hyundaistraymond.ca',
+    'FB1': 'francois.boulet@hyundaistraymond.ca',
+    'FB':  'francois.boulet@hyundaistraymond.ca',
+    'SP1': 'sonia.perusse@hyundaistraymond.ca',
+    'SP':  'sonia.perusse@hyundaistraymond.ca',
+    'JD':  'jdube@hyundaistraymond.ca'
+  };
+
+  var bonCourant = null;
+
+  for (var i = 0; i < lignes.length; i++) {
+    var ligne = lignes[i];
+
+    // Détecter une nouvelle ligne de bon: commence par WP suivi de chiffres et date
+    // Format: WP43003   3/18/26  FREDERIC BOUCHER   BOU143 #TM 418 208-3197  Vehicule...
+    var matchBon = ligne.match(/^(WP\d+)\s+(\d+\/\d+\/\d+)\s+(.+?)\s{2,}/);
+    if (matchBon) {
+      // Sauvegarder le bon précédent si valide
+      if (bonCourant && bonCourant.statut !== 'FERME') {
+        bons.push(bonCourant);
+      }
+
+      var numeroWP = matchBon[1];
+      var dateRaw  = matchBon[2]; // ex: 3/18/26
+      var clientRaw = matchBon[3].trim();
+
+      // Convertir date MM/DD/YY en YYYY-MM-DD
+      var dateParts = dateRaw.split('/');
+      var dateEntree = '20' + dateParts[2] + '-' + dateParts[0].padStart(2,'0') + '-' + dateParts[1].padStart(2,'0');
+
+      // Extraire téléphone de la ligne
+      var telMatch = ligne.match(/(\d{3}[\s-]\d{3}[-]\d{4}|\d{3}[\s]\d{3}-\d{4})/);
+      var tel = telMatch ? telMatch[0] : null;
+
+      // Extraire véhicule de la ligne (format: HYUNDAI    TUCSON     2017 ...)
+      var vehiculeMatch = ligne.match(/V(?:é|e)hicule\s*:\s*([\w]+)\s+([\w\s]+?)\s+(\d{4})\s+([\w\d]+)/i);
+      var marque = null, modele = null, annee = null, vin = null;
+      if (vehiculeMatch) {
+        marque = vehiculeMatch[1].trim();
+        modele = vehiculeMatch[2].trim();
+        annee  = parseInt(vehiculeMatch[3]);
+        vin    = vehiculeMatch[4].trim();
+      }
+
+      bonCourant = {
+        numero_wp:    numeroWP,
+        date_entree:  dateEntree,
+        client_nom:   clientRaw,
+        client_tel:   tel,
+        marque:       marque,
+        modele:       modele,
+        annee:        annee,
+        vin:          vin,
+        vehicule:     annee && marque && modele ? annee + ' ' + marque + ' ' + modele : null,
+        statut:       null,
+        advisor_email:null,
+        montant:      null,
+        description:  [],
+        courtoisie:   false
+      };
+      continue;
+    }
+
+    if (!bonCourant) continue;
+
+    // Détecter statut
+    var matchStatut = ligne.match(/Statut\s*:\s*(OUVERT|FERME|REOUVERT)/i);
+    if (matchStatut) {
+      bonCourant.statut = matchStatut[1].toUpperCase();
+      continue;
+    }
+
+    // Détecter véhicule si pas encore trouvé sur la ligne du bon
+    if (!bonCourant.vin) {
+      var vMatch = ligne.match(/V(?:é|e)hicule\s*:\s*([\w]+)\s+([\w\s5]+?)\s+(\d{4})\s+([A-HJ-NPR-Z0-9]{17})/i);
+      if (vMatch) {
+        bonCourant.marque  = vMatch[1].trim();
+        bonCourant.modele  = vMatch[2].trim();
+        bonCourant.annee   = parseInt(vMatch[3]);
+        bonCourant.vin     = vMatch[4].trim();
+        bonCourant.vehicule = vMatch[3] + ' ' + vMatch[1] + ' ' + vMatch[2].trim();
+      }
+    }
+
+    // Détecter aviseur
+    var matchAviseur = ligne.match(/Aviseur\s*[.:]+\s*([A-Z0-9]+)/i);
+    if (matchAviseur) {
+      var code = matchAviseur[1].trim().toUpperCase();
+      bonCourant.advisor_email = AVISEURS[code] || null;
+      continue;
+    }
+
+    // Détecter montant total
+    var matchTotal = ligne.match(/Total\s+Document\s+([\d\s]+\.[\d]+)/i);
+    if (matchTotal) {
+      bonCourant.montant = matchTotal[1].trim() + '$';
+      continue;
+    }
+
+    // Détecter descriptions de travaux (lignes avec codes de travail)
+    var matchDesc = ligne.match(/[A-Z]-\s+\w+\s+(.{10,})/);
+    if (matchDesc && bonCourant.description.length < 3) {
+      var desc = matchDesc[1].trim();
+      if (desc.length > 5 && !desc.match(/^\d/)) {
+        bonCourant.description.push(desc);
+      }
+    }
+  }
+
+  // Ajouter le dernier bon
+  if (bonCourant && bonCourant.statut !== 'FERME') {
+    bons.push(bonCourant);
+  }
+
+  // Finaliser les descriptions et filtrer les FERME
+  return bons
+    .filter(function(b) { return b.statut === 'OUVERT' || b.statut === 'REOUVERT'; })
+    .map(function(b) {
+      b.description = b.description.join(' | ');
+      return b;
+    });
+}
+
+// ─── ROUTES ───────────────────────────────────────────────────────────────────
+
 router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller'), upload.single('fichier'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
@@ -142,7 +237,7 @@ router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller
     var content = [{ type: 'text', text: PROMPT_RDV + '\n\nContenu du fichier:\n' + contenu }];
 
     var response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 8000,
       messages: [{ role: 'user', content: content }]
     });
@@ -156,17 +251,12 @@ router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller
     var byEmail = {};
     usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
-    // Archiver les anciens RDV actifs
     await pool.query(
       'UPDATE work_orders SET status = $1 WHERE type_bon = $2 AND status = $3',
       ['annule', 'rdv', 'open']
     );
 
-    var importes = 0;
-    var erreurs = 0;
-    var details = [];
-
-    // Déterminer la date du rapport
+    var importes = 0, erreurs = 0, details = [];
     var dateRapport = bons.length > 0 && bons[0].date_rdv
       ? bons[0].date_rdv.replace(/-/g, '')
       : new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -207,80 +297,55 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
   try {
-    var contenu = req.file.buffer.toString('utf-8');
-    var MAX_CHARS = 80000;
-    var chunks = [];
-    for (var ci = 0; ci < contenu.length; ci += MAX_CHARS) {
-      chunks.push(contenu.slice(ci, ci + MAX_CHARS));
-    }
+    var contenu = req.file.buffer.toString('latin1');
+    var tousLesBons = parseWP(contenu);
+    console.log('WP parser: bons trouves:', tousLesBons.length);
 
-    var tousLesBons = [];
+    var usersResult = await pool.query('SELECT id, email FROM users');
+    var byEmail = {};
+    usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
-    for (var ci2 = 0; ci2 < chunks.length; ci2++) {
-      var content2 = [{ type: 'text', text: PROMPT_WP + '\n\nContenu du fichier:\n' + chunks[ci2] }];
-      try {
-        var response2 = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 8000,
-          messages: [{ role: 'user', content: content2 }]
-        });
-        var raw2 = response2.content[0].text;
-        var jsonStr2 = nettoierJson(raw2);
-        var bons2 = JSON.parse(jsonStr2);
-        if (Array.isArray(bons2)) tousLesBons = tousLesBons.concat(bons2);
-      } catch (e) {
-        console.error('Erreur chunk:', e.message);
-      }
-    }
-
-    var usersResult2 = await pool.query('SELECT id, email FROM users');
-    var byEmail2 = {};
-    usersResult2.rows.forEach(function(u) { byEmail2[u.email] = u.id; });
-
-    var importes2 = 0;
-    var fermes = 0;
-    var erreurs2 = 0;
-    var details2 = [];
+    var importes = 0, fermes = 0, erreurs = 0, details = [];
     var wpNumerosActifs = [];
 
-    for (var idx2 = 0; idx2 < tousLesBons.length; idx2++) {
-      var bon2 = tousLesBons[idx2];
-      if (!bon2.numero_wp) continue;
+    for (var idx = 0; idx < tousLesBons.length; idx++) {
+      var bon = tousLesBons[idx];
+      if (!bon.numero_wp) continue;
 
       try {
-        var advisorId2 = bon2.advisor_email ? byEmail2[bon2.advisor_email] || null : null;
-        var vehicule2 = bon2.vehicule || [bon2.annee, bon2.marque, bon2.modele].filter(Boolean).join(' ');
-        var numero2 = 'WP-' + bon2.numero_wp;
-        wpNumerosActifs.push(numero2);
+        var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
+        var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
+        var numero = 'WP-' + bon.numero_wp;
+        wpNumerosActifs.push(numero);
 
-        var clientNom = bon2.client_nom;
-        if (estGarantie(clientNom) && bon2.vin) {
-          var nomTrouve = await chercherNomClient(bon2.vin);
+        var clientNom = bon.client_nom;
+        if (estGarantie(clientNom) && bon.vin) {
+          var nomTrouve = await chercherNomClient(bon.vin);
           if (nomTrouve) clientNom = nomTrouve + ' (garantie)';
         }
 
-        var existing = await pool.query('SELECT id FROM work_orders WHERE numero = $1', [numero2]);
+        var existing = await pool.query('SELECT id FROM work_orders WHERE numero = $1', [numero]);
 
         if (existing.rows.length > 0) {
           await pool.query(
             'UPDATE work_orders SET client_nom=$1, vehicule=$2, description=$3, montant=$4, advisor_id=$5, updated_at=NOW() WHERE numero=$6',
-            [clientNom, vehicule2, bon2.description || null, bon2.montant || 'A estimer', advisorId2, numero2]
+            [clientNom, vehicule, bon.description || null, bon.montant || 'A estimer', advisorId, numero]
           );
         } else {
           await pool.query(
             'INSERT INTO work_orders (numero, numero_wp, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_entree, advisor_id, source, type_bon, courtoisie, status, statut_detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)',
-            [numero2, bon2.numero_wp, clientNom, bon2.client_tel || null, vehicule2,
-             bon2.annee || null, bon2.marque || null, bon2.modele || null,
-             bon2.vin || null, bon2.description || null, bon2.montant || 'A estimer',
-             bon2.date_entree || new Date().toISOString().slice(0, 10),
-             advisorId2, 'pdf', 'wp', bon2.courtoisie || false, 'open', 'vehicule_sur_place']
+            [numero, bon.numero_wp, clientNom, bon.client_tel || null, vehicule,
+             bon.annee || null, bon.marque || null, bon.modele || null,
+             bon.vin || null, bon.description || null, bon.montant || 'A estimer',
+             bon.date_entree || new Date().toISOString().slice(0, 10),
+             advisorId, 'pdf', 'wp', bon.courtoisie || false, 'open', 'vehicule_sur_place']
           );
-          importes2++;
+          importes++;
         }
-        details2.push({ numero: numero2, status: 'ok' });
+        details.push({ numero: numero, client: clientNom, status: 'ok' });
       } catch (err) {
-        erreurs2++;
-        details2.push({ numero: bon2.numero_wp, status: 'erreur', message: err.message });
+        erreurs++;
+        details.push({ numero: bon.numero_wp, status: 'erreur', message: err.message });
       }
     }
 
@@ -299,8 +364,8 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
       }
     }
 
-    await logImport(req.user.id, req.file.originalname, importes2, erreurs2, details2);
-    res.json({ success: true, importes: importes2, fermes: fermes, erreurs: erreurs2, total: tousLesBons.length, type: 'wp' });
+    await logImport(req.user.id, req.file.originalname, importes, erreurs, details);
+    res.json({ success: true, importes: importes, fermes: fermes, erreurs: erreurs, total: tousLesBons.length, type: 'wp' });
 
   } catch (err) {
     console.error('Erreur import WP:', err);
