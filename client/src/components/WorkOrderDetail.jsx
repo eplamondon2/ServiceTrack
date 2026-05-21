@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STATUS_LABELS, STATUS_COLORS } from '../pages/Dashboard';
 
-const SDS_URL = 'https://sdsweb.serti.com';
+const SDS_URL = 'https://sdsweb.serti.com/SDS/index.aspx';
 
 const TYPE_ICONS = { note:'ti-note', appel:'ti-phone', texto:'ti-message', courriel:'ti-mail', livraison:'ti-check', statut:'ti-refresh' };
 
@@ -85,7 +85,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>Informations</div>
           {[
             ['Véhicule',   wo.vehicule],
-            ['Promesse',   wo.date_promesse],
+            ['Date et heure RDV', wo.date_promesse],
             ['Montant',    wo.montant],
             ['Conseiller', `${wo.advisor_prenom || ''} ${wo.advisor_nom || ''}`],
           ].map(([label, val]) => val ? (
@@ -111,7 +111,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
                 <i className="ti ti-phone" /> {wo.client_tel}
               </a>
             )}
-            <a href={SDS_URL} target="_blank" rel="noopener noreferrer"
+            <a href={`${SDS_URL}?tel=${wo.client_tel ? wo.client_tel.replace(/\D/g,'') : ''}`} target="_blank" rel="noopener noreferrer"
               style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
               <i className="ti ti-message" /> Texto via Serti
               <i className="ti ti-external-link" style={{ fontSize:'11px' }} />
