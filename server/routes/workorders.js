@@ -3,27 +3,25 @@ const pool     = require('../db/pool');
 const { auth, requireRole } = require('../middleware/auth');
 
 // ─── GET /api/workorders ──────────────────────────────────────────────────────
-// Query params: status, advisor_id, search, limit, offset
 router.get('/', auth, async (req, res) => {
-  const { status, advisor_id, search, limit = 50, offset = 0 } = req.query;
+  const { status, advisor_id, search, type_bon, limit = 50, offset = 0 } = req.query;
 
   let where = ['1=1'];
   let params = [];
   let i = 1;
 
-  if (status)     { where.push(`wo.status = $${i++}`);       params.push(status); }
-  if (advisor_id) { where.push(`wo.advisor_id = $${i++}`);   params.push(advisor_id); }
+  if (status)     { where.push(`wo.status = $${i++}`);      params.push(status); }
+  if (advisor_id) { where.push(`wo.advisor_id = $${i++}`);  params.push(advisor_id); }
+  if (type_bon)   { where.push(`wo.type_bon = $${i++}`);    params.push(type_bon); }
   if (search) {
     where.push(`(wo.numero ILIKE $${i} OR wo.client_nom ILIKE $${i} OR wo.vehicule ILIKE $${i})`);
     params.push(`%${search}%`); i++;
   }
 
- // Seuls les conseillers sont restreints à leurs bons
-// directeur, admin, preposee voient tout
-if (req.user.role === 'conseiller') {
-  where.push(`wo.advisor_id = $${i++}`);
-  params.push(req.user.id);
-}
+  if (req.user.role === 'conseiller') {
+    where.push(`wo.advisor_id = $${i++}`);
+    params.push(req.user.id);
+  }
 
   try {
     const sql = `
@@ -61,18 +59,15 @@ if (req.user.role === 'conseiller') {
 router.get('/stats', auth, async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT
-        status,
-        COUNT(*)::int AS count,
-        advisor_id,
-        u.nom AS advisor_nom, u.prenom AS advisor_prenom, u.initiales
+      SELECT status, COUNT(*)::int AS count, advisor_id,
+             u.nom AS advisor_nom, u.prenom AS advisor_prenom, u.initiales
       FROM work_orders wo
       LEFT JOIN users u ON wo.advisor_id = u.id
       GROUP BY status, advisor_id, u.nom, u.prenom, u.initiales
     `);
 
     const sans_suivi = await pool.query(`
-      SELECT wo.id, wo.numero, wo.client_nom, wo.status,
+      SELECT wo.id, wo.numero, wo.client_nom, wo.status, wo.type_bon,
              u.initiales AS advisor_initiales, u.nom AS advisor_nom
       FROM work_orders wo
       LEFT JOIN users u ON wo.advisor_id = u.id
@@ -121,7 +116,8 @@ router.post('/', auth, async (req, res) => {
   const {
     numero, client_nom, client_tel, vehicule, vehicule_annee,
     vehicule_marque, vehicule_modele, kilometrage, vin,
-    description, montant, date_promesse, status, advisor_id, source, serti_id
+    description, montant, date_promesse, status, advisor_id,
+    source, serti_id, type_bon, courtoisie
   } = req.body;
 
   if (!numero || !client_nom || !vehicule)
@@ -132,14 +128,16 @@ router.post('/', auth, async (req, res) => {
       INSERT INTO work_orders
         (numero, client_nom, client_tel, vehicule, vehicule_annee,
          vehicule_marque, vehicule_modele, kilometrage, vin,
-         description, montant, date_promesse, status, advisor_id, source, serti_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         description, montant, date_promesse, status, advisor_id,
+         source, serti_id, type_bon, courtoisie)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING *
     `, [numero, client_nom, client_tel, vehicule, vehicule_annee,
         vehicule_marque, vehicule_modele, kilometrage, vin,
         description, montant || 'À estimer', date_promesse,
         status || 'open', advisor_id || req.user.id,
-        source || 'manuel', serti_id]);
+        source || 'manuel', serti_id,
+        type_bon || 'rdv', courtoisie || false]);
 
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -152,22 +150,24 @@ router.post('/', auth, async (req, res) => {
 // ─── PATCH /api/workorders/:id ────────────────────────────────────────────────
 router.patch('/:id', auth, async (req, res) => {
   const allowed = ['client_nom','client_tel','vehicule','description','montant',
-                   'date_promesse','status','advisor_id','kilometrage'];
-  const updates = Object.keys(req.body)
-    .filter(k => allowed.includes(k))
-    .map((k, i) => `${k} = $${i + 2}`);
+                   'date_promesse','status','advisor_id','kilometrage',
+                   'statut_detail','date_rdv_avenir','date_piece_prevue','courtoisie'];
+
+  const keys   = Object.keys(req.body).filter(k => allowed.includes(k));
+  const values = keys.map(k => req.body[k]);
+  const updates = keys.map((k, i) => `${k} = $${i + 2}`);
 
   if (!updates.length) return res.status(400).json({ error: 'Aucun champ à modifier' });
 
   try {
     const { rows } = await pool.query(
       `UPDATE work_orders SET ${updates.join(', ')} WHERE id = $1 RETURNING *`,
-      [req.params.id, ...Object.values(req.body).filter((_, i) =>
-        allowed.includes(Object.keys(req.body)[i]))]
+      [req.params.id, ...values]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Bon non trouvé' });
     res.json(rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
