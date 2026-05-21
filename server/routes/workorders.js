@@ -73,6 +73,7 @@ router.get('/stats', auth, async (req, res) => {
       LEFT JOIN users u ON wo.advisor_id = u.id
       LEFT JOIN suivis s ON s.work_order_id = wo.id
       WHERE wo.status != 'livre' AND wo.status != 'annule'
+      AND wo.type_bon != 'rdv'
       GROUP BY wo.id, u.id
       HAVING COUNT(s.id) = 0
       ORDER BY wo.date_entree ASC
