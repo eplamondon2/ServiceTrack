@@ -24,8 +24,6 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
   const [datePiece, setDatePiece]       = useState('');
   const [courtoisie, setCourtoisie]     = useState(false);
   const [saving, setSaving]             = useState(false);
-  const [savingStatut, setSavingStatut] = useState(false);
-  const [savedStatut, setSavedStatut]   = useState(false);
   const [error, setError]               = useState('');
 
   useEffect(() => {
@@ -36,7 +34,6 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     setDateRdv(wo.date_rdv_avenir || '');
     setDatePiece(wo.date_piece_prevue || '');
     setCourtoisie(wo.courtoisie || false);
-    setSavedStatut(false);
   }, [wo?.id]);
 
   if (!wo) return (
@@ -46,48 +43,57 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     </div>
   );
 
-  async function sauvegarderStatut() {
-    setSavingStatut(true); setError('');
+  async function toggleCourtoisie() {
+    var newVal = !courtoisie;
+    setCourtoisie(newVal);
     try {
-      await api.updateWorkOrder(wo.id, {
-        statut_detail:     statutDetail || null,
-        date_rdv_avenir:   dateRdv || null,
-        date_piece_prevue: datePiece || null,
-        courtoisie:        courtoisie
-      });
-      onUpdated({
-        ...wo,
-        statut_detail:     statutDetail || null,
-        date_rdv_avenir:   dateRdv || null,
-        date_piece_prevue: datePiece || null,
-        courtoisie:        courtoisie
-      });
-      setSavedStatut(true);
-      setTimeout(() => setSavedStatut(false), 2000);
+      await api.updateWorkOrder(wo.id, { courtoisie: newVal });
+      onUpdated({ ...wo, courtoisie: newVal });
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingStatut(false);
+      setCourtoisie(!newVal);
     }
+  }
+
+  async function changerStatutDetail(key) {
+    var newVal = statutDetail === key ? '' : key;
+    setStatutDetail(newVal);
+    try {
+      await api.updateWorkOrder(wo.id, { statut_detail: newVal || null });
+      onUpdated({ ...wo, statut_detail: newVal || null });
+    } catch (err) {
+      setStatutDetail(statutDetail);
+    }
+  }
+
+  async function changerDateRdv(val) {
+    setDateRdv(val);
+    try {
+      await api.updateWorkOrder(wo.id, { date_rdv_avenir: val || null });
+      onUpdated({ ...wo, date_rdv_avenir: val || null });
+    } catch (err) {}
+  }
+
+  async function changerDatePiece(val) {
+    setDatePiece(val);
+    try {
+      await api.updateWorkOrder(wo.id, { date_piece_prevue: val || null });
+      onUpdated({ ...wo, date_piece_prevue: val || null });
+    } catch (err) {}
   }
 
   async function addSuivi() {
     if (!note.trim()) { setError('Veuillez écrire une note de suivi'); return; }
     setSaving(true); setError('');
     try {
-      const added = await api.addSuivi({
-        work_order_id: wo.id,
-        note:          note.trim(),
-        type,
+      var added = await api.addSuivi({
+        work_order_id:  wo.id,
+        note:           note.trim(),
+        type:           type,
         nouveau_status: newStatus || undefined
       });
-      setSuivis(prev => [added, ...prev]);
+      setSuivis(function(prev) { return [added, ...prev]; });
       setNote(''); setNewStatus('');
-      onUpdated({
-        ...wo,
-        status:      newStatus || wo.status,
-        suivi_count: (parseInt(wo.suivi_count) || 0) + 1
-      });
+      onUpdated({ ...wo, status: newStatus || wo.status, suivi_count: (parseInt(wo.suivi_count) || 0) + 1 });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -162,7 +168,6 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
               </div>
             ) : null;
           })}
-
           {wo.description && (
             <div style={{ marginTop:'8px', padding:'8px', background:'var(--bg2)', borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text2)' }}>
               {wo.description}
@@ -170,7 +175,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           )}
         </div>
 
-        {/* Statut et courtoisie — pour tous les bons */}
+        {/* Courtoisie + Statut véhicule */}
         <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>
             {isWP ? 'Statut du véhicule' : 'Informations supplémentaires'}
@@ -179,7 +184,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           {/* Courtoisie */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px', padding:'8px 10px', background:'var(--bg2)', borderRadius:'var(--radius)' }}>
             <span style={{ fontSize:'13px', color:'var(--text2)' }}>🚗 Véhicule de courtoisie</span>
-            <button onClick={() => setCourtoisie(function(c) { return !c; })}
+            <button onClick={toggleCourtoisie}
               style={{ padding:'3px 12px', borderRadius:'10px', border:'none', cursor:'pointer', fontWeight:500, fontSize:'12px',
                 background: courtoisie ? 'var(--green-lt)' : 'var(--bg3)',
                 color: courtoisie ? 'var(--green)' : 'var(--text3)' }}>
@@ -187,54 +192,49 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
             </button>
           </div>
 
-          {/* Statuts détaillés — seulement WP */}
+          {/* Statuts détaillés — WP seulement */}
           {isWP && (
-            <div style={{ display:'flex', flexDirection:'column', gap:'5px', marginBottom:'8px' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:'5px' }}>
               {Object.entries(STATUT_DETAIL_LABELS).map(function(entry) {
                 var key = entry[0], label = entry[1];
                 var active = statutDetail === key;
                 return (
-                  <button key={key} onClick={() => setStatutDetail(active ? '' : key)}
-                    style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 10px',
-                      borderRadius:'var(--radius)',
-                      border: '0.5px solid ' + (active ? 'var(--blue)' : 'var(--border)'),
-                      background: active ? 'var(--blue-lt)' : 'transparent',
-                      cursor:'pointer', fontSize:'13px',
-                      color: active ? 'var(--blue)' : 'var(--text2)',
-                      fontWeight: active ? 500 : 400, textAlign:'left' }}>
-                    {label}
-                  </button>
+                  <div key={key}>
+                    <button onClick={function() { changerStatutDetail(key); }}
+                      style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 10px', width:'100%',
+                        borderRadius:'var(--radius)',
+                        border: '0.5px solid ' + (active ? 'var(--blue)' : 'var(--border)'),
+                        background: active ? 'var(--blue-lt)' : 'transparent',
+                        cursor:'pointer', fontSize:'13px',
+                        color: active ? 'var(--blue)' : 'var(--text2)',
+                        fontWeight: active ? 500 : 400, textAlign:'left' }}>
+                      {label}
+                    </button>
+
+                    {/* Date RDV à venir */}
+                    {active && key === 'rdv_avenir' && (
+                      <div style={{ marginTop:'6px', paddingLeft:'4px' }}>
+                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date du rendez-vous</label>
+                        <input type="datetime-local" value={dateRdv}
+                          onChange={function(e) { changerDateRdv(e.target.value); }}
+                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                      </div>
+                    )}
+
+                    {/* Date pièce en commande */}
+                    {active && key === 'piece_commande' && (
+                      <div style={{ marginTop:'6px', paddingLeft:'4px' }}>
+                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date d'arrivée prévue</label>
+                        <input type="date" value={datePiece}
+                          onChange={function(e) { changerDatePiece(e.target.value); }}
+                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
           )}
-
-          {/* Date RDV à venir */}
-          {isWP && statutDetail === 'rdv_avenir' && (
-            <div style={{ marginBottom:'8px' }}>
-              <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date du rendez-vous</label>
-              <input type="datetime-local" value={dateRdv} onChange={function(e) { setDateRdv(e.target.value); }}
-                style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
-            </div>
-          )}
-
-          {/* Date pièce */}
-          {isWP && statutDetail === 'piece_commande' && (
-            <div style={{ marginBottom:'8px' }}>
-              <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date d'arrivée prévue</label>
-              <input type="date" value={datePiece} onChange={function(e) { setDatePiece(e.target.value); }}
-                style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
-            </div>
-          )}
-
-          {/* Bouton sauvegarder statut */}
-          <button onClick={sauvegarderStatut} disabled={savingStatut}
-            style={{ width:'100%', padding:'8px', borderRadius:'var(--radius)', border:'none',
-              background: savedStatut ? 'var(--green)' : 'var(--blue)',
-              color:'white', fontWeight:500, fontSize:'13px', cursor:'pointer',
-              opacity: savingStatut ? 0.7 : 1, transition:'background 0.2s' }}>
-            {savedStatut ? '✓ Sauvegardé!' : savingStatut ? 'Sauvegarde...' : <><i className="ti ti-device-floppy" /> Sauvegarder le statut</>}
-          </button>
         </div>
 
         {/* Contact client */}
