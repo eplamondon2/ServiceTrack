@@ -7,24 +7,26 @@ const SDS_URL = 'https://luxoto.sdswebapp.com:9746/SDSWeb';
 const TYPE_ICONS = { note:'ti-note', appel:'ti-phone', texto:'ti-message', courriel:'ti-mail', livraison:'ti-check', statut:'ti-refresh' };
 
 const STATUT_DETAIL_LABELS = {
-  rdv_avenir:        '🗓 Rendez-vous à venir',
-  piece_commande:    '📦 Pièce en commande',
-  vehicule_sur_place:'🔧 Véhicule sur place',
-  hytac:             '🏢 HYTAC',
-  livre:             '✅ Livré',
+  rdv_avenir:         '🗓 Rendez-vous à venir',
+  piece_commande:     '📦 Pièce en commande',
+  vehicule_sur_place: '🔧 Véhicule sur place',
+  hytac:              '🏢 HYTAC',
+  livre:              '✅ Livré',
 };
 
 export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser }) {
-  const [suivis, setSuivis]         = useState([]);
-  const [note, setNote]             = useState('');
-  const [type, setType]             = useState('note');
-  const [newStatus, setNewStatus]   = useState('');
+  const [suivis, setSuivis]             = useState([]);
+  const [note, setNote]                 = useState('');
+  const [type, setType]                 = useState('note');
+  const [newStatus, setNewStatus]       = useState('');
   const [statutDetail, setStatutDetail] = useState('');
-  const [dateRdv, setDateRdv]       = useState('');
-  const [datePiece, setDatePiece]   = useState('');
-  const [courtoisie, setCourtoisie] = useState(false);
-  const [saving, setSaving]         = useState(false);
-  const [error, setError]           = useState('');
+  const [dateRdv, setDateRdv]           = useState('');
+  const [datePiece, setDatePiece]       = useState('');
+  const [courtoisie, setCourtoisie]     = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [savingStatut, setSavingStatut] = useState(false);
+  const [savedStatut, setSavedStatut]   = useState(false);
+  const [error, setError]               = useState('');
 
   useEffect(() => {
     if (!wo) { setSuivis([]); return; }
@@ -34,6 +36,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     setDateRdv(wo.date_rdv_avenir || '');
     setDatePiece(wo.date_piece_prevue || '');
     setCourtoisie(wo.courtoisie || false);
+    setSavedStatut(false);
   }, [wo?.id]);
 
   if (!wo) return (
@@ -43,37 +46,46 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     </div>
   );
 
+  async function sauvegarderStatut() {
+    setSavingStatut(true); setError('');
+    try {
+      await api.updateWorkOrder(wo.id, {
+        statut_detail:     statutDetail || null,
+        date_rdv_avenir:   dateRdv || null,
+        date_piece_prevue: datePiece || null,
+        courtoisie:        courtoisie
+      });
+      onUpdated({
+        ...wo,
+        statut_detail:     statutDetail || null,
+        date_rdv_avenir:   dateRdv || null,
+        date_piece_prevue: datePiece || null,
+        courtoisie:        courtoisie
+      });
+      setSavedStatut(true);
+      setTimeout(() => setSavedStatut(false), 2000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingStatut(false);
+    }
+  }
+
   async function addSuivi() {
     if (!note.trim()) { setError('Veuillez écrire une note de suivi'); return; }
     setSaving(true); setError('');
     try {
-      // Mettre à jour statut_detail si changé
-      if (statutDetail !== (wo.statut_detail || '') || dateRdv !== (wo.date_rdv_avenir || '') || datePiece !== (wo.date_piece_prevue || '') || courtoisie !== wo.courtoisie) {
-        await api.updateWorkOrder(wo.id, {
-          statut_detail: statutDetail || null,
-          date_rdv_avenir: dateRdv || null,
-          date_piece_prevue: datePiece || null,
-          courtoisie
-        });
-      }
-
       const added = await api.addSuivi({
         work_order_id: wo.id,
-        note: note.trim(),
+        note:          note.trim(),
         type,
         nouveau_status: newStatus || undefined
       });
-
       setSuivis(prev => [added, ...prev]);
       setNote(''); setNewStatus('');
-
       onUpdated({
         ...wo,
-        status: newStatus || wo.status,
-        statut_detail: statutDetail || wo.statut_detail,
-        date_rdv_avenir: dateRdv || wo.date_rdv_avenir,
-        date_piece_prevue: datePiece || wo.date_piece_prevue,
-        courtoisie,
+        status:      newStatus || wo.status,
         suivi_count: (parseInt(wo.suivi_count) || 0) + 1
       });
     } catch (err) {
@@ -85,17 +97,22 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
 
   function formatDate(ts) {
     if (!ts) return '';
-    const d = new Date(ts);
-    const today = new Date();
-    const isToday = d.toDateString() === today.toDateString();
+    var d = new Date(ts);
+    var today = new Date();
+    var isToday = d.toDateString() === today.toDateString();
     return isToday
       ? d.toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' })
       : d.toLocaleDateString('fr-CA', { day:'numeric', month:'short' }) + ' ' + d.toLocaleTimeString('fr-CA', { hour:'2-digit', minute:'2-digit' });
   }
 
-  const isWP = wo.type_bon === 'wp';
+  function formatDateSimple(val) {
+    if (!val) return '';
+    return val.split('T')[0];
+  }
 
-  const pill = (
+  var isWP = wo.type_bon === 'wp';
+
+  var pill = (
     <span style={{ fontSize:'11px', padding:'3px 9px', borderRadius:'10px', fontWeight:500,
       background: wo.status === 'open' ? 'var(--red-lt)' : wo.status === 'suivi' ? 'var(--amber-lt)' : wo.status === 'attente' ? 'var(--blue-lt)' : 'var(--green-lt)',
       color: STATUS_COLORS[wo.status] }}>
@@ -105,6 +122,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
 
   return (
     <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg)' }}>
+
       {/* Header */}
       <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)`, flexShrink:0 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
@@ -125,32 +143,25 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
       </div>
 
       <div style={{ flex:1, overflowY:'auto' }}>
-        {/* Info */}
+
+        {/* Informations */}
         <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>Informations</div>
           {[
             ['Véhicule',          wo.vehicule],
             ['Date et heure RDV', wo.date_promesse],
-            ['Date entrée',       wo.date_entree],
+            ['Date entrée',       formatDateSimple(wo.date_entree)],
             ['Montant',           wo.montant],
-            ['Conseiller',        `${wo.advisor_prenom || ''} ${wo.advisor_nom || ''}`],
-          ].map(([label, val]) => val ? (
-            <div key={label} style={{ display:'flex', justifyContent:'space-between', marginBottom:'5px', fontSize:'13px' }}>
-              <span style={{ color:'var(--text2)' }}>{label}</span>
-              <span style={{ fontWeight:500, textAlign:'right', maxWidth:'60%' }}>{val}</span>
-            </div>
-          ) : null)}
-
-          {/* Courtoisie */}
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'6px', padding:'6px 8px', background:'var(--bg2)', borderRadius:'var(--radius)' }}>
-            <span style={{ fontSize:'13px', color:'var(--text2)' }}>🚗 Véhicule de courtoisie</span>
-            <button onClick={() => setCourtoisie(c => !c)}
-              style={{ padding:'3px 10px', borderRadius:'10px', border:'none', cursor:'pointer', fontWeight:500, fontSize:'12px',
-                background: courtoisie ? 'var(--green-lt)' : 'var(--bg3)',
-                color: courtoisie ? 'var(--green)' : 'var(--text3)' }}>
-              {courtoisie ? 'Oui' : 'Non'}
-            </button>
-          </div>
+            ['Conseiller',        wo.advisor_prenom ? wo.advisor_prenom + ' ' + (wo.advisor_nom || '') : null],
+          ].map(function(item) {
+            var label = item[0], val = item[1];
+            return val ? (
+              <div key={label} style={{ display:'flex', justifyContent:'space-between', marginBottom:'5px', fontSize:'13px' }}>
+                <span style={{ color:'var(--text2)' }}>{label}</span>
+                <span style={{ fontWeight:500, textAlign:'right', maxWidth:'60%' }}>{val}</span>
+              </div>
+            ) : null;
+          })}
 
           {wo.description && (
             <div style={{ marginTop:'8px', padding:'8px', background:'var(--bg2)', borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text2)' }}>
@@ -159,45 +170,79 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           )}
         </div>
 
-        {/* Statut détaillé — seulement pour WP */}
-        {isWP && (
-          <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
-            <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>Statut du véhicule</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-              {Object.entries(STATUT_DETAIL_LABELS).map(([key, label]) => (
-                <button key={key} onClick={() => setStatutDetail(key)}
-                  style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 10px', borderRadius:'var(--radius)', border:`0.5px solid ${statutDetail === key ? 'var(--blue)' : 'var(--border)'}`,
-                    background: statutDetail === key ? 'var(--blue-lt)' : 'transparent', cursor:'pointer', fontSize:'13px',
-                    color: statutDetail === key ? 'var(--blue)' : 'var(--text2)', fontWeight: statutDetail === key ? 500 : 400, textAlign:'left' }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {statutDetail === 'rdv_avenir' && (
-              <div style={{ marginTop:'8px' }}>
-                <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date du rendez-vous</label>
-                <input type="datetime-local" value={dateRdv} onChange={e => setDateRdv(e.target.value)}
-                  style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
-              </div>
-            )}
-
-            {statutDetail === 'piece_commande' && (
-              <div style={{ marginTop:'8px' }}>
-                <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date d'arrivée prévue</label>
-                <input type="date" value={datePiece} onChange={e => setDatePiece(e.target.value)}
-                  style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
-              </div>
-            )}
+        {/* Statut et courtoisie — pour tous les bons */}
+        <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
+          <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>
+            {isWP ? 'Statut du véhicule' : 'Informations supplémentaires'}
           </div>
-        )}
 
-        {/* Contact */}
+          {/* Courtoisie */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px', padding:'8px 10px', background:'var(--bg2)', borderRadius:'var(--radius)' }}>
+            <span style={{ fontSize:'13px', color:'var(--text2)' }}>🚗 Véhicule de courtoisie</span>
+            <button onClick={() => setCourtoisie(function(c) { return !c; })}
+              style={{ padding:'3px 12px', borderRadius:'10px', border:'none', cursor:'pointer', fontWeight:500, fontSize:'12px',
+                background: courtoisie ? 'var(--green-lt)' : 'var(--bg3)',
+                color: courtoisie ? 'var(--green)' : 'var(--text3)' }}>
+              {courtoisie ? 'Oui' : 'Non'}
+            </button>
+          </div>
+
+          {/* Statuts détaillés — seulement WP */}
+          {isWP && (
+            <div style={{ display:'flex', flexDirection:'column', gap:'5px', marginBottom:'8px' }}>
+              {Object.entries(STATUT_DETAIL_LABELS).map(function(entry) {
+                var key = entry[0], label = entry[1];
+                var active = statutDetail === key;
+                return (
+                  <button key={key} onClick={() => setStatutDetail(active ? '' : key)}
+                    style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 10px',
+                      borderRadius:'var(--radius)',
+                      border: '0.5px solid ' + (active ? 'var(--blue)' : 'var(--border)'),
+                      background: active ? 'var(--blue-lt)' : 'transparent',
+                      cursor:'pointer', fontSize:'13px',
+                      color: active ? 'var(--blue)' : 'var(--text2)',
+                      fontWeight: active ? 500 : 400, textAlign:'left' }}>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Date RDV à venir */}
+          {isWP && statutDetail === 'rdv_avenir' && (
+            <div style={{ marginBottom:'8px' }}>
+              <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date du rendez-vous</label>
+              <input type="datetime-local" value={dateRdv} onChange={function(e) { setDateRdv(e.target.value); }}
+                style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+            </div>
+          )}
+
+          {/* Date pièce */}
+          {isWP && statutDetail === 'piece_commande' && (
+            <div style={{ marginBottom:'8px' }}>
+              <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date d'arrivée prévue</label>
+              <input type="date" value={datePiece} onChange={function(e) { setDatePiece(e.target.value); }}
+                style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+            </div>
+          )}
+
+          {/* Bouton sauvegarder statut */}
+          <button onClick={sauvegarderStatut} disabled={savingStatut}
+            style={{ width:'100%', padding:'8px', borderRadius:'var(--radius)', border:'none',
+              background: savedStatut ? 'var(--green)' : 'var(--blue)',
+              color:'white', fontWeight:500, fontSize:'13px', cursor:'pointer',
+              opacity: savingStatut ? 0.7 : 1, transition:'background 0.2s' }}>
+            {savedStatut ? '✓ Sauvegardé!' : savingStatut ? 'Sauvegarde...' : <><i className="ti ti-device-floppy" /> Sauvegarder le statut</>}
+          </button>
+        </div>
+
+        {/* Contact client */}
         <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>Contact client</div>
           <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
             {wo.client_tel && (
-              <a href={`tel:${wo.client_tel.replace(/\D/g,'')}`}
+              <a href={'tel:' + wo.client_tel.replace(/\D/g,'')}
                 style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
                 <i className="ti ti-phone" /> {wo.client_tel}
               </a>
@@ -210,42 +255,44 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           </div>
         </div>
 
-        {/* Suivis */}
+        {/* Historique suivis */}
         <div style={{ padding:'12px 16px', borderBottom:`0.5px solid var(--border)` }}>
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:'8px' }}>
             Historique des suivis ({suivis.length})
           </div>
           {suivis.length === 0 ? (
             <div style={{ fontSize:'12px', color:'var(--text3)', fontStyle:'italic' }}>Aucun suivi enregistré</div>
-          ) : suivis.map(s => (
-            <div key={s.id} style={{ background:'var(--bg2)', borderRadius:'var(--radius)', padding:'8px 10px', marginBottom:'6px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'3px' }}>
-                <span style={{ fontSize:'12px', fontWeight:500, display:'flex', alignItems:'center', gap:'5px' }}>
-                  <i className={`ti ${TYPE_ICONS[s.type] || 'ti-note'}`} style={{ color:'var(--blue)', fontSize:'13px' }} />
-                  {s.prenom} {s.nom?.[0]}.
-                </span>
-                <span style={{ fontSize:'11px', color:'var(--text3)' }}>{formatDate(s.created_at)}</span>
-              </div>
-              <div style={{ fontSize:'12px', color:'var(--text2)' }}>{s.note}</div>
-              {s.nouveau_status && s.ancien_status !== s.nouveau_status && (
-                <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'3px' }}>
-                  Statut: {STATUS_LABELS[s.ancien_status]} → <strong>{STATUS_LABELS[s.nouveau_status]}</strong>
+          ) : suivis.map(function(s) {
+            return (
+              <div key={s.id} style={{ background:'var(--bg2)', borderRadius:'var(--radius)', padding:'8px 10px', marginBottom:'6px' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'3px' }}>
+                  <span style={{ fontSize:'12px', fontWeight:500, display:'flex', alignItems:'center', gap:'5px' }}>
+                    <i className={'ti ' + (TYPE_ICONS[s.type] || 'ti-note')} style={{ color:'var(--blue)', fontSize:'13px' }} />
+                    {s.prenom} {s.nom ? s.nom[0] : ''}.
+                  </span>
+                  <span style={{ fontSize:'11px', color:'var(--text3)' }}>{formatDate(s.created_at)}</span>
                 </div>
-              )}
-            </div>
-          ))}
+                <div style={{ fontSize:'12px', color:'var(--text2)' }}>{s.note}</div>
+                {s.nouveau_status && s.ancien_status !== s.nouveau_status && (
+                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'3px' }}>
+                    Statut: {STATUS_LABELS[s.ancien_status]} → <strong>{STATUS_LABELS[s.nouveau_status]}</strong>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Add suivi */}
+      {/* Ajouter un suivi */}
       <div style={{ padding:'12px 16px', borderTop:`0.5px solid var(--border)`, flexShrink:0, background:'var(--bg)' }}>
         <div style={{ fontSize:'12px', fontWeight:500, marginBottom:'6px' }}>Ajouter un suivi</div>
-        <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+        <textarea value={note} onChange={function(e) { setNote(e.target.value); }} rows={2}
           placeholder="Ex: Client avisé par texto, pièce reçue, livraison confirmée..."
           style={{ width:'100%', padding:'7px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', resize:'none', background:'var(--bg2)', outline:'none', marginBottom:'6px' }} />
         {error && <div style={{ fontSize:'12px', color:'var(--red)', marginBottom:'6px' }}>{error}</div>}
         <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', alignItems:'center' }}>
-          <select value={type} onChange={e => setType(e.target.value)}
+          <select value={type} onChange={function(e) { setType(e.target.value); }}
             style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)' }}>
             <option value="note">Note</option>
             <option value="appel">Appel téléphonique</option>
@@ -253,7 +300,7 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
             <option value="courriel">Courriel</option>
             <option value="livraison">Livraison</option>
           </select>
-          <select value={newStatus} onChange={e => setNewStatus(e.target.value)}
+          <select value={newStatus} onChange={function(e) { setNewStatus(e.target.value); }}
             style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', flex:1 }}>
             <option value="">Statut inchangé</option>
             <option value="open">Ouvert</option>
