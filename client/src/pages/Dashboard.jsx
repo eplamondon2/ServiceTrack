@@ -19,8 +19,9 @@ export default function Dashboard() {
   const [workOrders, setWO]     = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading]   = useState(true);
-  const [filters, setFilters]   = useState({ status:'', search:'', advisor_id:'' });
+  const [filters, setFilters]   = useState({ status:'', search:'', advisor_id:'', type_bon:'' });
   const [stats, setStats]       = useState(null);
+  const [section, setSection]   = useState('rdv'); // 'rdv' ou 'wp'
 
   const tab = location.pathname.startsWith('/import') ? 'import'
             : location.pathname.startsWith('/stats')  ? 'stats'
@@ -29,7 +30,7 @@ export default function Dashboard() {
   const loadWO = useCallback(async () => {
     setLoading(true);
     try {
-      const params = {};
+      const params = { type_bon: section };
       if (filters.status)     params.status     = filters.status;
       if (filters.search)     params.search     = filters.search;
       if (filters.advisor_id) params.advisor_id = filters.advisor_id;
@@ -40,7 +41,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, section]);
 
   const loadStats = useCallback(async () => {
     try { setStats(await api.getStats()); } catch {}
@@ -55,11 +56,15 @@ export default function Dashboard() {
     loadStats();
   }
 
+  const rdvOrders = workOrders.filter(w => w.type_bon === 'rdv' || !w.type_bon);
+  const wpOrders  = workOrders.filter(w => w.type_bon === 'wp');
+  const displayed = section === 'rdv' ? rdvOrders : wpOrders;
+
   const counts = {
-    open:    workOrders.filter(w => w.status === 'open').length,
-    suivi:   workOrders.filter(w => w.status === 'suivi').length,
-    attente: workOrders.filter(w => w.status === 'attente').length,
-    livre:   workOrders.filter(w => w.status === 'livre').length,
+    open:    displayed.filter(w => w.status === 'open').length,
+    suivi:   displayed.filter(w => w.status === 'suivi').length,
+    attente: displayed.filter(w => w.status === 'attente').length,
+    livre:   displayed.filter(w => w.status === 'livre').length,
   };
 
   const navStyle = (t) => ({
@@ -67,36 +72,36 @@ export default function Dashboard() {
     padding:'7px 12px', borderRadius:'var(--radius)',
     border:'none', background: tab === t ? 'var(--bg3)' : 'transparent',
     color: tab === t ? 'var(--text)' : 'var(--text2)',
-    fontWeight: tab === t ? 500 : 400, fontSize:'13px',
-    cursor:'pointer'
+    fontWeight: tab === t ? 500 : 400, fontSize:'13px', cursor:'pointer'
+  });
+
+  const sectionBtnStyle = (s) => ({
+    flex:1, padding:'7px 10px', border:'none', cursor:'pointer', fontSize:'13px', fontWeight: section === s ? 600 : 400,
+    borderBottom: section === s ? '2px solid var(--blue)' : '2px solid transparent',
+    background:'transparent', color: section === s ? 'var(--blue)' : 'var(--text2)',
+    transition:'all 0.15s'
   });
 
   const sideItem = (statusKey, label, icon, color) => {
-    const isAll = statusKey === 'all';
+    const isAll  = statusKey === 'all';
     const active = isAll ? filters.status === '' : filters.status === statusKey;
-    const count = isAll ? workOrders.length : counts[statusKey];
-
+    const count  = isAll ? displayed.length : counts[statusKey];
     return (
-      <button
-        key={statusKey}
+      <button key={statusKey}
         onClick={() => setFilters(f => ({ ...f, status: isAll ? '' : (active ? '' : statusKey) }))}
-        style={{
-          display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+        style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
           padding:'6px 8px', borderRadius:'var(--radius)', border:'none',
           background: active ? 'var(--bg)' : 'transparent',
           color: active ? 'var(--text)' : 'var(--text2)',
-          fontWeight: active ? 500 : 400, cursor:'pointer', fontSize:'13px'
-        }}>
+          fontWeight: active ? 500 : 400, cursor:'pointer', fontSize:'13px' }}>
         <span style={{ display:'flex', alignItems:'center', gap:'7px' }}>
           <i className={`ti ti-${icon}`} style={{ color: active ? color : 'inherit' }} />
           {label}
         </span>
         {count > 0 && (
-          <span style={{
-            fontSize:'11px', padding:'1px 6px', borderRadius:'10px',
+          <span style={{ fontSize:'11px', padding:'1px 6px', borderRadius:'10px',
             background: isAll ? 'var(--bg3)' : statusKey === 'open' ? 'var(--red-lt)' : statusKey === 'suivi' ? 'var(--amber-lt)' : statusKey === 'attente' ? 'var(--blue-lt)' : 'var(--green-lt)',
-            color: isAll ? 'var(--text2)' : statusKey === 'open' ? 'var(--red)' : statusKey === 'suivi' ? 'var(--amber)' : statusKey === 'attente' ? 'var(--blue)' : 'var(--green)'
-          }}>
+            color: isAll ? 'var(--text2)' : statusKey === 'open' ? 'var(--red)' : statusKey === 'suivi' ? 'var(--amber)' : statusKey === 'attente' ? 'var(--blue)' : 'var(--green)' }}>
             {count}
           </span>
         )}
@@ -133,21 +138,30 @@ export default function Dashboard() {
       <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
         {/* Sidebar */}
         <div style={{ width:'196px', borderRight:`0.5px solid var(--border)`, padding:'10px 8px', background:'var(--bg2)', flexShrink:0, overflowY:'auto' }}>
+
+          {/* Sections RDV / WP */}
+          <div style={{ display:'flex', borderBottom:`0.5px solid var(--border)`, marginBottom:'10px' }}>
+            <button style={sectionBtnStyle('rdv')} onClick={() => { setSection('rdv'); setFilters(f=>({...f,status:''})); setSelected(null); }}>
+              📅 RDV
+            </button>
+            <button style={sectionBtnStyle('wp')} onClick={() => { setSection('wp'); setFilters(f=>({...f,status:''})); setSelected(null); }}>
+              🔧 Bons
+            </button>
+          </div>
+
           <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', padding:'0 8px', marginBottom:'4px' }}>Statut</div>
-          {sideItem('all',     'Tous',         'list',         'var(--text2)')}
-          {sideItem('open',    'Ouverts',       'alert-circle', 'var(--red)')}
+          {sideItem('all',     'Tous',          'list',         'var(--text2)')}
+          {sideItem('open',    section === 'rdv' ? 'Rendez-vous du jour' : 'Ouverts', 'alert-circle', 'var(--red)')}
           {sideItem('suivi',   'Suivi requis',  'clock',        'var(--amber)')}
           {sideItem('attente', 'En attente',    'hourglass',    'var(--blue)')}
           {sideItem('livre',   'Livrés',        'check',        'var(--green)')}
 
-          {(user?.role === 'admin' || user?.role === 'directeur') && (
+          {(user?.role === 'admin' || user?.role === 'directeur') && stats?.sans_suivi?.length > 0 && (
             <>
               <div style={{ fontSize:'10px', color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.06em', padding:'0 8px', marginTop:'16px', marginBottom:'4px' }}>Urgences</div>
-              {stats?.sans_suivi?.length > 0 && (
-                <div style={{ padding:'6px 8px', borderRadius:'var(--radius)', background:'var(--red-lt)', fontSize:'12px', color:'var(--red)' }}>
-                  <i className="ti ti-alert-triangle" /> {stats.sans_suivi.length} sans suivi
-                </div>
-              )}
+              <div style={{ padding:'6px 8px', borderRadius:'var(--radius)', background:'var(--red-lt)', fontSize:'12px', color:'var(--red)' }}>
+                <i className="ti ti-alert-triangle" /> {stats.sans_suivi.length} sans suivi
+              </div>
             </>
           )}
         </div>
@@ -158,10 +172,10 @@ export default function Dashboard() {
             <Route path="/" element={
               <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
                 <WorkOrderList
-                  workOrders={workOrders} loading={loading}
+                  workOrders={displayed} loading={loading}
                   selected={selected} onSelect={setSelected}
                   filters={filters} setFilters={setFilters}
-                  onRefresh={loadWO}
+                  onRefresh={loadWO} section={section}
                 />
                 <WorkOrderDetail
                   wo={selected} onClose={() => setSelected(null)}
