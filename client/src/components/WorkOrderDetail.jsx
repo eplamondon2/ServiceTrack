@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { STATUS_LABELS, STATUS_COLORS } from '../pages/Dashboard';
 
-const SDS_URL = 'https://sdsweb.serti.com/SDS/index.aspx';
+const SDS_URL = 'https://luxoto.sdswebapp.com:9746/SDSWeb';
 
 const TYPE_ICONS = { note:'ti-note', appel:'ti-phone', texto:'ti-message', courriel:'ti-mail', livraison:'ti-check', statut:'ti-refresh' };
 
