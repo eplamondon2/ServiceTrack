@@ -11,7 +11,6 @@ const STATUT_DETAIL_LABELS = {
   piece_commande:     '📦 Pièce en commande',
   vehicule_sur_place: '🔧 Véhicule sur place',
   hytac:              '🏢 HYTAC',
-  livre:              '✅ Livré',
 };
 
 export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser }) {
@@ -31,8 +30,8 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     api.getSuivis(wo.id).then(setSuivis).catch(() => {});
     setNote(''); setNewStatus(''); setError('');
     setStatutDetail(wo.statut_detail || '');
-    setDateRdv(wo.date_rdv_avenir || '');
-    setDatePiece(wo.date_piece_prevue || '');
+    setDateRdv(wo.date_rdv_avenir ? wo.date_rdv_avenir.slice(0, 16) : '');
+    setDatePiece(wo.date_piece_prevue ? wo.date_piece_prevue.slice(0, 10) : '');
     setCourtoisie(wo.courtoisie || false);
   }, [wo?.id]);
 
@@ -65,16 +64,22 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
     }
   }
 
-  async function changerDateRdv(val) {
+  function changerDateRdv(val) {
     setDateRdv(val);
+  }
+
+  async function sauvegarderDateRdv(val) {
     try {
       await api.updateWorkOrder(wo.id, { date_rdv_avenir: val || null });
       onUpdated({ ...wo, date_rdv_avenir: val || null });
     } catch (err) {}
   }
 
-  async function changerDatePiece(val) {
+  function changerDatePiece(val) {
     setDatePiece(val);
+  }
+
+  async function sauvegarderDatePiece(val) {
     try {
       await api.updateWorkOrder(wo.id, { date_piece_prevue: val || null });
       onUpdated({ ...wo, date_piece_prevue: val || null });
@@ -214,20 +219,38 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
                     {/* Date RDV à venir */}
                     {active && key === 'rdv_avenir' && (
                       <div style={{ marginTop:'6px', paddingLeft:'4px' }}>
-                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date du rendez-vous</label>
+                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>
+                          Date du rendez-vous
+                        </label>
                         <input type="datetime-local" value={dateRdv}
                           onChange={function(e) { changerDateRdv(e.target.value); }}
-                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                          onBlur={function(e) { sauvegarderDateRdv(e.target.value); }}
+                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`,
+                            borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                        {dateRdv && (
+                          <div style={{ fontSize:'11px', color:'var(--green)', marginTop:'3px' }}>
+                            ✓ Sauvegardé au {dateRdv.replace('T', ' à ')}
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {/* Date pièce en commande */}
                     {active && key === 'piece_commande' && (
                       <div style={{ marginTop:'6px', paddingLeft:'4px' }}>
-                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>Date d'arrivée prévue</label>
+                        <label style={{ fontSize:'11px', color:'var(--text2)', display:'block', marginBottom:'4px' }}>
+                          Date d'arrivée prévue
+                        </label>
                         <input type="date" value={datePiece}
                           onChange={function(e) { changerDatePiece(e.target.value); }}
-                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                          onBlur={function(e) { sauvegarderDatePiece(e.target.value); }}
+                          style={{ width:'100%', padding:'6px 10px', border:`0.5px solid var(--border2)`,
+                            borderRadius:'var(--radius)', background:'var(--bg2)', fontSize:'13px' }} />
+                        {datePiece && (
+                          <div style={{ fontSize:'11px', color:'var(--green)', marginTop:'3px' }}>
+                            ✓ Arrivée prévue le {datePiece}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -243,12 +266,16 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
           <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
             {wo.client_tel && (
               <a href={'tel:' + wo.client_tel.replace(/\D/g,'')}
-                style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
+                style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px',
+                  border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)',
+                  fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
                 <i className="ti ti-phone" /> {wo.client_tel}
               </a>
             )}
             <a href={SDS_URL} target="_blank" rel="noopener noreferrer"
-              style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
+              style={{ display:'inline-flex', alignItems:'center', gap:'5px', padding:'5px 10px',
+                border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)',
+                fontSize:'12px', color:'var(--text)', textDecoration:'none' }}>
               <i className="ti ti-message" /> Texto via Serti
               <i className="ti ti-external-link" style={{ fontSize:'11px' }} />
             </a>
@@ -289,11 +316,14 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
         <div style={{ fontSize:'12px', fontWeight:500, marginBottom:'6px' }}>Ajouter un suivi</div>
         <textarea value={note} onChange={function(e) { setNote(e.target.value); }} rows={2}
           placeholder="Ex: Client avisé par texto, pièce reçue, livraison confirmée..."
-          style={{ width:'100%', padding:'7px 10px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', resize:'none', background:'var(--bg2)', outline:'none', marginBottom:'6px' }} />
+          style={{ width:'100%', padding:'7px 10px', border:`0.5px solid var(--border2)`,
+            borderRadius:'var(--radius)', resize:'none', background:'var(--bg2)',
+            outline:'none', marginBottom:'6px' }} />
         {error && <div style={{ fontSize:'12px', color:'var(--red)', marginBottom:'6px' }}>{error}</div>}
         <div style={{ display:'flex', gap:'6px', flexWrap:'wrap', alignItems:'center' }}>
           <select value={type} onChange={function(e) { setType(e.target.value); }}
-            style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)' }}>
+            style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`,
+              borderRadius:'var(--radius)', background:'var(--bg2)' }}>
             <option value="note">Note</option>
             <option value="appel">Appel téléphonique</option>
             <option value="texto">Texto envoyé</option>
@@ -301,7 +331,8 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
             <option value="livraison">Livraison</option>
           </select>
           <select value={newStatus} onChange={function(e) { setNewStatus(e.target.value); }}
-            style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`, borderRadius:'var(--radius)', background:'var(--bg2)', flex:1 }}>
+            style={{ padding:'5px 8px', border:`0.5px solid var(--border2)`,
+              borderRadius:'var(--radius)', background:'var(--bg2)', flex:1 }}>
             <option value="">Statut inchangé</option>
             <option value="open">Ouvert</option>
             <option value="suivi">Suivi requis</option>
@@ -309,7 +340,9 @@ export default function WorkOrderDetail({ wo, onClose, onUpdated, currentUser })
             <option value="livre">Livré</option>
           </select>
           <button onClick={addSuivi} disabled={saving}
-            style={{ padding:'6px 14px', background:'var(--blue)', color:'white', border:'none', borderRadius:'var(--radius)', fontWeight:500, opacity: saving ? 0.7 : 1 }}>
+            style={{ padding:'6px 14px', background:'var(--blue)', color:'white',
+              border:'none', borderRadius:'var(--radius)', fontWeight:500,
+              opacity: saving ? 0.7 : 1, cursor:'pointer' }}>
             <i className="ti ti-check" /> {saving ? 'Sauvegarde...' : 'Suivi fait'}
           </button>
         </div>
