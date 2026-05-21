@@ -98,7 +98,18 @@ function genNumeroRdv(bon, idx, dateStr) {
   return 'RDV-' + dateStr + '-' + String(idx + 1).padStart(3, '0');
 }
 
-// ─── PARSER WP SANS AI ────────────────────────────────────────────────────────
+function convertirDate(dateRaw) {
+  if (!dateRaw) return new Date().toISOString().slice(0, 10);
+  var d = dateRaw.split('T')[0];
+  if (d.match(/^\d{4}-\d{2}-\d{2}$/)) return d;
+  var parts = dateRaw.split('/');
+  if (parts.length === 3) {
+    var yy = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+    return yy + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 function parseWP(contenu) {
   var bons = [];
   var lignes = contenu.split('\n');
@@ -117,78 +128,75 @@ function parseWP(contenu) {
   for (var i = 0; i < lignes.length; i++) {
     var ligne = lignes[i];
 
-    // Détecter une nouvelle ligne de bon: commence par WP suivi de chiffres et date
-    // Format: WP43003   3/18/26  FREDERIC BOUCHER   BOU143 #TM 418 208-3197  Vehicule...
+    // Détecter une nouvelle ligne de bon WP
     var matchBon = ligne.match(/^(WP\d+)\s+(\d+\/\d+\/\d+)\s+(.+?)\s{2,}/);
     if (matchBon) {
-      // Sauvegarder le bon précédent si valide
       if (bonCourant && bonCourant.statut !== 'FERME') {
         bons.push(bonCourant);
       }
 
-      var numeroWP = matchBon[1];
-      var dateRaw  = matchBon[2]; // ex: 3/18/26
-      var clientRaw = matchBon[3].trim();
+      var numeroWP    = matchBon[1].replace('WP', '');
+      var dateRaw     = matchBon[2];
+      var clientRaw   = matchBon[3].trim();
 
-      // Convertir date MM/DD/YY en YYYY-MM-DD
-      var dateParts = dateRaw.split('/');
-      var dateEntree = '20' + dateParts[2] + '-' + dateParts[0].padStart(2,'0') + '-' + dateParts[1].padStart(2,'0');
+      var dateParts   = dateRaw.split('/');
+      var yy          = dateParts[2].length === 2 ? '20' + dateParts[2] : dateParts[2];
+      var dateEntree  = yy + '-' + dateParts[0].padStart(2,'0') + '-' + dateParts[1].padStart(2,'0');
 
-      // Extraire téléphone de la ligne
-      var telMatch = ligne.match(/(\d{3}[\s-]\d{3}[-]\d{4}|\d{3}[\s]\d{3}-\d{4})/);
-      var tel = telMatch ? telMatch[0] : null;
-
-      // Extraire véhicule de la ligne (format: HYUNDAI    TUCSON     2017 ...)
-      var vehiculeMatch = ligne.match(/V(?:é|e)hicule\s*:\s*([\w]+)\s+([\w\s]+?)\s+(\d{4})\s+([\w\d]+)/i);
-      var marque = null, modele = null, annee = null, vin = null;
-      if (vehiculeMatch) {
-        marque = vehiculeMatch[1].trim();
-        modele = vehiculeMatch[2].trim();
-        annee  = parseInt(vehiculeMatch[3]);
-        vin    = vehiculeMatch[4].trim();
-      }
+      var telMatch    = ligne.match(/(\d{3}[\s]\d{3}-\d{4})/);
+      var tel         = telMatch ? telMatch[0] : null;
 
       bonCourant = {
         numero_wp:    numeroWP,
         date_entree:  dateEntree,
         client_nom:   clientRaw,
         client_tel:   tel,
-        marque:       marque,
-        modele:       modele,
-        annee:        annee,
-        vin:          vin,
-        vehicule:     annee && marque && modele ? annee + ' ' + marque + ' ' + modele : null,
+        marque:       null,
+        modele:       null,
+        annee:        null,
+        vin:          null,
+        vehicule:     null,
         statut:       null,
         advisor_email:null,
         montant:      null,
         description:  [],
         courtoisie:   false
       };
+
+      // Chercher véhicule sur la même ligne
+      var vMatch = ligne.match(/V(?:é|e)hicule\s*:\s*(\w+)\s+([\w\s5]+?)\s+(\d{4})\s+([A-HJ-NPR-Z0-9]{17})/i);
+      if (vMatch) {
+        bonCourant.marque   = vMatch[1].trim();
+        bonCourant.modele   = vMatch[2].trim();
+        bonCourant.annee    = parseInt(vMatch[3]);
+        bonCourant.vin      = vMatch[4].trim();
+        bonCourant.vehicule = vMatch[3] + ' ' + vMatch[1] + ' ' + vMatch[2].trim();
+      }
       continue;
     }
 
     if (!bonCourant) continue;
 
-    // Détecter statut
+    // Statut
     var matchStatut = ligne.match(/Statut\s*:\s*(OUVERT|FERME|REOUVERT)/i);
     if (matchStatut) {
       bonCourant.statut = matchStatut[1].toUpperCase();
       continue;
     }
 
-    // Détecter véhicule si pas encore trouvé sur la ligne du bon
+    // Véhicule sur ligne séparée
     if (!bonCourant.vin) {
-      var vMatch = ligne.match(/V(?:é|e)hicule\s*:\s*([\w]+)\s+([\w\s5]+?)\s+(\d{4})\s+([A-HJ-NPR-Z0-9]{17})/i);
-      if (vMatch) {
-        bonCourant.marque  = vMatch[1].trim();
-        bonCourant.modele  = vMatch[2].trim();
-        bonCourant.annee   = parseInt(vMatch[3]);
-        bonCourant.vin     = vMatch[4].trim();
-        bonCourant.vehicule = vMatch[3] + ' ' + vMatch[1] + ' ' + vMatch[2].trim();
+      var vMatch2 = ligne.match(/V(?:é|e)hicule\s*:\s*(\w+)\s+([\w\s5]+?)\s+(\d{4})\s+([A-HJ-NPR-Z0-9]{17})/i);
+      if (vMatch2) {
+        bonCourant.marque   = vMatch2[1].trim();
+        bonCourant.modele   = vMatch2[2].trim();
+        bonCourant.annee    = parseInt(vMatch2[3]);
+        bonCourant.vin      = vMatch2[4].trim();
+        bonCourant.vehicule = vMatch2[3] + ' ' + vMatch2[1] + ' ' + vMatch2[2].trim();
       }
     }
 
-    // Détecter aviseur
+    // Aviseur
     var matchAviseur = ligne.match(/Aviseur\s*[.:]+\s*([A-Z0-9]+)/i);
     if (matchAviseur) {
       var code = matchAviseur[1].trim().toUpperCase();
@@ -196,14 +204,14 @@ function parseWP(contenu) {
       continue;
     }
 
-    // Détecter montant total
+    // Montant total
     var matchTotal = ligne.match(/Total\s+Document\s+([\d\s]+\.[\d]+)/i);
     if (matchTotal) {
       bonCourant.montant = matchTotal[1].trim() + '$';
       continue;
     }
 
-    // Détecter descriptions de travaux (lignes avec codes de travail)
+    // Description (max 3 lignes)
     var matchDesc = ligne.match(/[A-Z]-\s+\w+\s+(.{10,})/);
     if (matchDesc && bonCourant.description.length < 3) {
       var desc = matchDesc[1].trim();
@@ -218,7 +226,6 @@ function parseWP(contenu) {
     bons.push(bonCourant);
   }
 
-  // Finaliser les descriptions et filtrer les FERME
   return bons
     .filter(function(b) { return b.statut === 'OUVERT' || b.statut === 'REOUVERT'; })
     .map(function(b) {
@@ -226,8 +233,6 @@ function parseWP(contenu) {
       return b;
     });
 }
-
-// ─── ROUTES ───────────────────────────────────────────────────────────────────
 
 router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller'), upload.single('fichier'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
@@ -264,10 +269,12 @@ router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller
     for (var idx = 0; idx < bons.length; idx++) {
       var bon = bons[idx];
       try {
-        var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
-        var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
-        var num = genNumeroRdv(bon, idx, dateRapport);
-        var datePromesse = bon.date_rdv && bon.heure_rdv ? bon.date_rdv + ' ' + bon.heure_rdv : bon.date_rdv || null;
+        var advisorId   = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
+        var vehicule    = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
+        var num         = genNumeroRdv(bon, idx, dateRapport);
+        var datePromesse = bon.date_rdv && bon.heure_rdv
+          ? bon.date_rdv + ' ' + bon.heure_rdv
+          : bon.date_rdv || null;
 
         await pool.query(
           'INSERT INTO work_orders (numero, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_promesse, advisor_id, source, type_bon, courtoisie, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (numero) DO UPDATE SET client_nom=EXCLUDED.client_nom, vehicule=EXCLUDED.vehicule, date_promesse=EXCLUDED.date_promesse, advisor_id=EXCLUDED.advisor_id, status=$16, updated_at=NOW()',
@@ -297,12 +304,12 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
   try {
-    var contenu = req.file.buffer.toString('latin1');
+    var contenu     = req.file.buffer.toString('latin1');
     var tousLesBons = parseWP(contenu);
     console.log('WP parser: bons trouves:', tousLesBons.length);
 
     var usersResult = await pool.query('SELECT id, email FROM users');
-    var byEmail = {};
+    var byEmail     = {};
     usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
     var importes = 0, fermes = 0, erreurs = 0, details = [];
@@ -314,8 +321,9 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
 
       try {
         var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
-        var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
-        var numero = 'WP-' + bon.numero_wp;
+        var vehicule  = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
+        var numero    = 'WP-' + bon.numero_wp;
+        var dateEntree = convertirDate(bon.date_entree);
         wpNumerosActifs.push(numero);
 
         var clientNom = bon.client_nom;
@@ -337,8 +345,7 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
             [numero, bon.numero_wp, clientNom, bon.client_tel || null, vehicule,
              bon.annee || null, bon.marque || null, bon.modele || null,
              bon.vin || null, bon.description || null, bon.montant || 'A estimer',
-             bon.date_entree || new Date().toISOString().slice(0, 10),
-             advisorId, 'pdf', 'wp', bon.courtoisie || false, 'open', 'vehicule_sur_place']
+             dateEntree, advisorId, 'pdf', 'wp', bon.courtoisie || false, 'open', 'vehicule_sur_place']
           );
           importes++;
         }
@@ -351,8 +358,8 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
 
     if (wpNumerosActifs.length > 0) {
       var placeholders = wpNumerosActifs.map(function(_, i) { return '$' + (i + 1); }).join(',');
-      var pLen = wpNumerosActifs.length;
-      var fermeParams = wpNumerosActifs.concat(['livre', 'wp', 'livre']);
+      var pLen         = wpNumerosActifs.length;
+      var fermeParams  = wpNumerosActifs.concat(['livre', 'wp', 'livre']);
       try {
         var fermeResult = await pool.query(
           'UPDATE work_orders SET status = $' + (pLen+1) + ' WHERE type_bon = $' + (pLen+2) + ' AND status != $' + (pLen+3) + ' AND numero NOT IN (' + placeholders + ') RETURNING numero',
