@@ -8,21 +8,15 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    await pool.query(`DELETE FROM suivis`);
-await pool.query(`DELETE FROM imports`);
-await pool.query(`DELETE FROM work_orders`);
-await pool.query(`DELETE FROM users`);
+    // Ajouter les nouvelles colonnes si elles n'existent pas
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS type_bon TEXT DEFAULT 'rdv' CHECK (type_bon IN ('rdv','wp'))`);
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS statut_detail TEXT CHECK (statut_detail IN ('rdv_avenir','piece_commande','vehicule_sur_place','hytac','livre'))`);
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS date_rdv_avenir TEXT`);
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS date_piece_prevue TEXT`);
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS courtoisie BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS numero_wp TEXT`);
 
-    await pool.query(`
-      INSERT INTO users (nom, prenom, email, password, role, initiales) VALUES
-        ('Langevin',  'Nancy',    'nancy.langevin@hyundaistraymond.ca',  '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'conseiller', 'NL'),
-        ('Boulet',    'Francois', 'francois.boulet@hyundaistraymond.ca', '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'conseiller', 'FB'),
-        ('Perusse',   'Sonia',    'sonia.perusse@hyundaistraymond.ca',   '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'directeur',  'SP'),
-        ('Dube',      'Johanne',  'jdube@hyundaistraymond.ca',           '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'preposee',   'JD'),
-        ('Plamondon', 'Etienne',  'eplamondon@hyundaistraymond.ca',      '$2a$12$se2KZDZOdfOl3gW2tXJZF.Y3TtovxwgyMfLsrv8rAe3DALSryfqOW', 'admin',      'EP')
-    `);
-
-    res.json({ success: true, message: 'Utilisateurs mis à jour!' });
+    res.json({ success: true, message: 'Base de données mise à jour!' });
   } catch (err) {
     console.error('Erreur setup:', err);
     res.status(500).json({ error: err.message });
