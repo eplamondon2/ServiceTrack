@@ -17,7 +17,10 @@ router.get('/', auth, async (req, res) => {
     where.push(`(wo.numero ILIKE $${i} OR wo.client_nom ILIKE $${i} OR wo.vehicule ILIKE $${i})`);
     params.push(`%${search}%`); i++;
   }
-
+// Exclure les RDV archivés (annulés) de la vue normale
+  if (type_bon === 'rdv') {
+    where.push(`wo.status != 'annule'`);
+  }
   if (req.user.role === 'conseiller') {
     where.push(`wo.advisor_id = $${i++}`);
     params.push(req.user.id);
