@@ -17,29 +17,42 @@ MAPPING DES AVISEURS:
 - SP1 ou SP = sonia.perusse@hyundaistraymond.ca
 - JD = jdube@hyundaistraymond.ca
 
+Le numero_adresse est le code court apres le nom du client sur la meme ligne, exemple:
+  07:30 PIERRE MORISSETTE  PIER04  418 329-2241  --> numero_adresse = PIER04
+  07:30 GERARD DESCHENES   059A    418 875-2832  --> numero_adresse = 059A
+  07:30 PATRICK MASSON     5635    418 111-2222  --> numero_adresse = 5635
+Si le client n a pas de numero_adresse, utilise null.
+
+Le numero_br est le Numero B.R. dans la section Aviseur, exemple:
+  Numero B.R. .........: WP44189  --> numero_br = WP44189
+Si absent, utilise null.
+
+Pour la courtoisie, cherche la colonne V dans le tableau (4eme colonne apres NIV): O = Oui, N = Non.
+
 Reponds UNIQUEMENT avec un tableau JSON valide, sans texte avant ou apres, sans balises markdown.
 
 Format exact:
 [
   {
-    "numero": "RDV-001",
-    "client_nom": "JEAN SIMARD",
-    "client_tel": "581 419-1063",
+    "numero_adresse": "PIER04",
+    "numero_br": null,
+    "date_rdv": "2026-05-21",
+    "heure_rdv": "07:30",
+    "client_nom": "PIERRE MORISSETTE",
+    "client_tel": "418 329-2241",
     "annee": 2022,
     "marque": "HYUNDAI",
-    "modele": "SANTA FE",
-    "vehicule": "2022 HYUNDAI SANTA FE",
-    "kilometrage": 66000,
-    "vin": "KM8S7DA25NU017299",
+    "modele": "KONA",
+    "vehicule": "2022 HYUNDAI KONA",
+    "kilometrage": 70000,
+    "vin": "KM8K1CAB8NU764049",
     "description": "Service d entretien 1",
     "montant": "132.17$",
-    "date_promesse": "2026-05-19 07:30",
-    "advisor_email": "nancy.langevin@hyundaistraymond.ca",
+    "advisor_email": "sonia.perusse@hyundaistraymond.ca",
     "courtoisie": false
   }
 ]
 
-Numérote sequentiellement: RDV-001, RDV-002, etc.
 Si un champ est absent, utilise null. Extrais TOUS les rendez-vous sans exception.`;
 
 const PROMPT_WP = `Tu es un assistant specialise dans l extraction de bons de travail depuis des rapports Serti Keyloop de Hyundai St-Raymond.
@@ -81,9 +94,7 @@ function nettoierJson(raw) {
   var jsonStr = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   if (!jsonStr.endsWith(']')) {
     var last = jsonStr.lastIndexOf('},');
-    if (last > 0) {
-      jsonStr = jsonStr.substring(0, last + 1) + ']';
-    }
+    if (last > 0) jsonStr = jsonStr.substring(0, last + 1) + ']';
   }
   return jsonStr;
 }
@@ -117,6 +128,12 @@ async function logImport(userId, fichierNom, importes, erreurs, details) {
   }
 }
 
+function genNumeroRdv(bon, idx, dateStr) {
+  if (bon.numero_br) return 'RDV-' + bon.numero_br;
+  if (bon.numero_adresse) return 'RDV-' + dateStr + '-' + bon.numero_adresse;
+  return 'RDV-' + dateStr + '-' + String(idx + 1).padStart(3, '0');
+}
+
 router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller'), upload.single('fichier'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
@@ -139,34 +156,38 @@ router.post('/rdv', auth, requireRole('admin','directeur','preposee','conseiller
     var byEmail = {};
     usersResult.rows.forEach(function(u) { byEmail[u.email] = u.id; });
 
-    // Archiver les anciens RDV
+    // Archiver les anciens RDV actifs
     await pool.query(
-      'UPDATE work_orders SET status = $1 WHERE type_bon = $2 AND status != $3',
-      ['annule', 'rdv', 'annule']
+      'UPDATE work_orders SET status = $1 WHERE type_bon = $2 AND status = $3',
+      ['annule', 'rdv', 'open']
     );
 
     var importes = 0;
     var erreurs = 0;
     var details = [];
 
+    // Déterminer la date du rapport
+    var dateRapport = bons.length > 0 && bons[0].date_rdv
+      ? bons[0].date_rdv.replace(/-/g, '')
+      : new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
     for (var idx = 0; idx < bons.length; idx++) {
       var bon = bons[idx];
       try {
         var advisorId = bon.advisor_email ? byEmail[bon.advisor_email] || null : null;
         var vehicule = bon.vehicule || [bon.annee, bon.marque, bon.modele].filter(Boolean).join(' ');
-        var dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
-        var num = bon.numero || ('RDV-' + dateStr + '-' + String(idx+1).padStart(3,'0'));
+        var num = genNumeroRdv(bon, idx, dateRapport);
+        var datePromesse = bon.date_rdv && bon.heure_rdv ? bon.date_rdv + ' ' + bon.heure_rdv : bon.date_rdv || null;
 
         await pool.query(
-          'INSERT INTO work_orders (numero, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_promesse, advisor_id, source, type_bon, courtoisie, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (numero) DO UPDATE SET status = $16, updated_at = NOW()',
+          'INSERT INTO work_orders (numero, client_nom, client_tel, vehicule, vehicule_annee, vehicule_marque, vehicule_modele, vin, description, montant, date_promesse, advisor_id, source, type_bon, courtoisie, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT (numero) DO UPDATE SET client_nom=EXCLUDED.client_nom, vehicule=EXCLUDED.vehicule, date_promesse=EXCLUDED.date_promesse, advisor_id=EXCLUDED.advisor_id, status=$16, updated_at=NOW()',
           [num, bon.client_nom, bon.client_tel || null, vehicule,
            bon.annee || null, bon.marque || null, bon.modele || null,
            bon.vin || null, bon.description || null, bon.montant || 'A estimer',
-           bon.date_promesse || null, advisorId, 'pdf', 'rdv',
-           bon.courtoisie || false, 'open']
+           datePromesse, advisorId, 'pdf', 'rdv', bon.courtoisie || false, 'open']
         );
         importes++;
-        details.push({ numero: num, status: 'ok' });
+        details.push({ numero: num, client: bon.client_nom, status: 'ok' });
       } catch (err) {
         erreurs++;
         details.push({ status: 'erreur', message: err.message });
@@ -206,9 +227,7 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
         var raw2 = response2.content[0].text;
         var jsonStr2 = nettoierJson(raw2);
         var bons2 = JSON.parse(jsonStr2);
-        if (Array.isArray(bons2)) {
-          tousLesBons = tousLesBons.concat(bons2);
-        }
+        if (Array.isArray(bons2)) tousLesBons = tousLesBons.concat(bons2);
       } catch (e) {
         console.error('Erreur chunk:', e.message);
       }
@@ -234,13 +253,10 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
         var numero2 = 'WP-' + bon2.numero_wp;
         wpNumerosActifs.push(numero2);
 
-        // Résoudre nom client pour les garanties
         var clientNom = bon2.client_nom;
         if (estGarantie(clientNom) && bon2.vin) {
           var nomTrouve = await chercherNomClient(bon2.vin);
-          if (nomTrouve) {
-            clientNom = nomTrouve + ' (garantie)';
-          }
+          if (nomTrouve) clientNom = nomTrouve + ' (garantie)';
         }
 
         var existing = await pool.query('SELECT id FROM work_orders WHERE numero = $1', [numero2]);
@@ -256,7 +272,7 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
             [numero2, bon2.numero_wp, clientNom, bon2.client_tel || null, vehicule2,
              bon2.annee || null, bon2.marque || null, bon2.modele || null,
              bon2.vin || null, bon2.description || null, bon2.montant || 'A estimer',
-             bon2.date_entree || new Date().toISOString().slice(0,10),
+             bon2.date_entree || new Date().toISOString().slice(0, 10),
              advisorId2, 'pdf', 'wp', bon2.courtoisie || false, 'open', 'vehicule_sur_place']
           );
           importes2++;
@@ -268,11 +284,10 @@ router.post('/wp', auth, requireRole('admin','directeur','preposee','conseiller'
       }
     }
 
-    // Fermer automatiquement les WP absents du rapport
     if (wpNumerosActifs.length > 0) {
       var placeholders = wpNumerosActifs.map(function(_, i) { return '$' + (i + 1); }).join(',');
-      var fermeParams = wpNumerosActifs.concat(['livre', 'wp', 'livre']);
       var pLen = wpNumerosActifs.length;
+      var fermeParams = wpNumerosActifs.concat(['livre', 'wp', 'livre']);
       try {
         var fermeResult = await pool.query(
           'UPDATE work_orders SET status = $' + (pLen+1) + ' WHERE type_bon = $' + (pLen+2) + ' AND status != $' + (pLen+3) + ' AND numero NOT IN (' + placeholders + ') RETURNING numero',
